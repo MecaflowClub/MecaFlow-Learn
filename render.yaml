@@ -4,14 +4,9 @@ services:
     env: python
     runtime: python3.11
     buildCommand: |
-      # Install FreeCAD and dependencies
-      apt-get update
-      apt-get install -y freecad python3-pip libgl1-mesa-glx xvfb
       python -m pip install --upgrade pip
       python -m pip install -r requirements.txt
-    startCommand: |
-      Xvfb :99 -screen 0 1024x768x16 &
-      uvicorn main:app --host 0.0.0.0 --port $PORT --workers 2
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT --workers 2
     envVars:
       # Only keep non-FreeCAD related variables here
       - key: MONGO_URL
