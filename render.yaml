@@ -2,8 +2,11 @@ services:
   - type: web
     name: mecaflow-backend
     env: python
-    runtime: python3.11
-    buildCommand: pip install -r requirements.txt
+    runtime: python3.11.7
+    pythonVersion: 3.11.7
+    buildCommand: |
+      python -m pip install --upgrade pip
+      pip install -r requirements.txt
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT --workers 2
     envVars:
       - key: PYTHON_VERSION
@@ -21,3 +24,8 @@ services:
     region: frankfurt
     plan: free
     autoDeploy: true
+    healthCheckPath: /docs
+    buildFilter:
+      paths:
+        - requirements.txt
+        - "**/*.py"
