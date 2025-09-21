@@ -2,6 +2,7 @@ services:
   - type: web
     name: mecaflow-backend
     env: python
+    rootDir: .   # <--- dis à Render de prendre la racine du repo (où est runtime.txt)
     buildCommand: |
       pip install --upgrade pip
       pip install -r requirements.txt
@@ -23,7 +24,3 @@ services:
     plan: free
     autoDeploy: true
     healthCheckPath: /docs
-    buildFilter:
-      paths:
-        - requirements.txt
-        - "**/*.py"
