@@ -4,23 +4,16 @@ services:
     env: python
     runtime: python3.11
     buildCommand: |
-      # Install FreeCAD and dependencies with sudo
+      # Install FreeCAD and dependencies
       sudo apt-get update
-      sudo apt-get install -y freecad python3-pip libgl1-mesa-glx
-      
-      # Set up Python environment
+      sudo apt-get install -y freecad python3-pip libgl1-mesa-glx xvfb
       python -m pip install --upgrade pip
       python -m pip install -r requirements.txt
-      
-      # Configure FreeCAD paths with sudo
-      sudo bash -c 'echo "export PYTHONPATH=$PYTHONPATH:/usr/lib/freecad/lib" >> /etc/environment'
-      sudo bash -c 'echo "export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/freecad/lib" >> /etc/environment'
-      source /etc/environment
-      
-    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT --workers 2
+    startCommand: |
+      Xvfb :99 -screen 0 1024x768x16 &
+      uvicorn main:app --host 0.0.0.0 --port $PORT --workers 2
     envVars:
-      - key: PYTHON_VERSION
-        value: 3.11.7
+      # Only keep non-FreeCAD related variables here
       - key: MONGO_URL
         value: mongodb+srv://islem:enpooran31@cluster0.yjykiin.mongodb.net/mecaflow
       - key: DB_NAME
@@ -31,10 +24,6 @@ services:
         value: HS256
       - key: ACCESS_TOKEN_EXPIRE_MINUTES
         value: "180"
-      - key: FREECAD_PATH
-        value: /usr/lib/freecad/lib
-      - key: PYTHONPATH
-        value: /usr/lib/freecad/lib:${PYTHONPATH:-}
     region: frankfurt
     plan: free
     autoDeploy: true
