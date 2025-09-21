@@ -1,28 +1,40 @@
-# Force redeploy
 services:
   - type: web
     name: mecaflow-backend
     env: python
-    rootDir: .   # Render prend la racine du repo
+    runtime: python3.11
     buildCommand: |
-      pip install --upgrade pip
-      pip install -r requirements.txt
-    startCommand: "uvicorn main:app --host 0.0.0.0 --port $PORT"
-
+      # Install FreeCAD and dependencies with sudo
+      sudo apt-get update
+      sudo apt-get install -y freecad python3-pip libgl1-mesa-glx
+      
+      # Set up Python environment
+      python -m pip install --upgrade pip
+      python -m pip install -r requirements.txt
+      
+      # Configure FreeCAD paths with sudo
+      sudo bash -c 'echo "export PYTHONPATH=$PYTHONPATH:/usr/lib/freecad/lib" >> /etc/environment'
+      sudo bash -c 'echo "export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/freecad/lib" >> /etc/environment'
+      source /etc/environment
+      
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT --workers 2
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.7
       - key: MONGO_URL
-        value: "mongodb+srv://islem:enpooran31@cluster0.yjykiin.mongodb.net/mecaflow"
+        value: mongodb+srv://islem:enpooran31@cluster0.yjykiin.mongodb.net/mecaflow
       - key: DB_NAME
-        value: "mecaflow"
+        value: mecaflow
       - key: SECRET_KEY
         value: "09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7"
       - key: ALGORITHM
-        value: "HS256"
+        value: HS256
       - key: ACCESS_TOKEN_EXPIRE_MINUTES
         value: "180"
-
+      - key: FREECAD_PATH
+        value: /usr/lib/freecad/lib
+      - key: PYTHONPATH
+        value: /usr/lib/freecad/lib:${PYTHONPATH:-}
     region: frankfurt
     plan: free
     autoDeploy: true
