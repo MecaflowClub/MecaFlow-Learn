@@ -2,24 +2,26 @@ services:
   - type: web
     name: mecaflow-backend
     env: python
-    rootDir: .   # <--- dis à Render de prendre la racine du repo (où est runtime.txt)
+    rootDir: .   # Render prend la racine du repo
     buildCommand: |
       pip install --upgrade pip
       pip install -r requirements.txt
-    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT --workers 2
+    startCommand: "uvicorn main:app --host 0.0.0.0 --port $PORT"
+
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.7
       - key: MONGO_URL
-        value: mongodb+srv://islem:enpooran31@cluster0.yjykiin.mongodb.net/mecaflow
+        value: "mongodb+srv://islem:enpooran31@cluster0.yjykiin.mongodb.net/mecaflow"
       - key: DB_NAME
-        value: mecaflow
+        value: "mecaflow"
       - key: SECRET_KEY
         value: "09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7"
       - key: ALGORITHM
-        value: HS256
+        value: "HS256"
       - key: ACCESS_TOKEN_EXPIRE_MINUTES
         value: "180"
+
     region: frankfurt
     plan: free
     autoDeploy: true
