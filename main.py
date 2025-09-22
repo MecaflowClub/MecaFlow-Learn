@@ -60,9 +60,11 @@ async def startup_event():
 async def health_check():
     try:
         if users_collection is None:
-            return {"status": "unhealthy", "reason": "database not initialized"}
+            return {"status": "starting", "reason": "database initializing"}
         await users_collection.find_one({})
         return {"status": "healthy"}
+    except Exception as e:
+        return {"status": "unhealthy", "reason": str(e)}
     except Exception as e:
         logging.error(f"Health check failed: {str(e)}")
         return {"status": "unhealthy"}
