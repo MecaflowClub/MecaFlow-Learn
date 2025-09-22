@@ -48,16 +48,14 @@ RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 # Copy application code
 COPY . .
 
-# Add healthcheck
-HEALTHCHECK --interval=5s --timeout=3s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:${PORT}/health || exit 1
-
-# Start FastAPI application
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "${PORT}", "--workers", "1"]
-
 # Set environment variables
 ENV PYTHONPATH=/usr/local/lib/python3.11/site-packages
 ENV LD_LIBRARY_PATH=/usr/local/lib
+ENV PYTHONUNBUFFERED=1
 
-# Start FastAPI application
-CMD uvicorn main:app --host 0.0.0.0 --port $PORT
+# Add healthcheck with longer intervals and startup period
+HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=3 \
+    CMD curl -f http://localhost:${PORT}/health || exit 1
+
+# Start FastAPI application with proper worker configuration
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "${PORT}", "--workers", "1", "--timeout-keep-alive", "75"]
