@@ -3,7 +3,7 @@ services:
     name: mecaflow-backend
     env: python
     runtime: python3.11
-    buildCommand: pip install --upgrade pip wheel setuptools && pip install OCC-Core --no-deps && pip install -r requirements.txt
+    buildCommand: pip install --upgrade pip wheel setuptools && pip install pythonocc-core && pip install -r requirements.txt
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT --workers 2
     envVars:
       # MongoDB configuration
