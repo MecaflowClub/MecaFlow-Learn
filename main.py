@@ -56,7 +56,7 @@ async def startup_event():
         logging.error(f"Failed to initialize database: {str(e)}")
         raise RuntimeError(f"Could not initialize database: {str(e)}")
 
-@app.get("/health")
+@app.get("/api/health")
 async def health_check():
     try:
         if users_collection is None:

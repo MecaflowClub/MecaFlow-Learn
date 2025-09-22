@@ -129,7 +129,7 @@ def test_server():
     print("\n🚀 Test du serveur...")
     try:
         import requests
-        response = requests.get("http://localhost:8000/health", timeout=5)
+        response = requests.get("http://localhost:8000/api/health", timeout=5)
         if response.status_code == 200:
             print("✅ Serveur accessible")
             return True
@@ -184,7 +184,7 @@ def main():
         print("3. Tester avec admin@cadplatform.com / admin123")
         print("\n🔗 URLs importantes:")
         print("   • API Docs: http://localhost:8000/docs")
-        print("   • Health Check: http://localhost:8000/health")
+        print("   • Health Check: http://localhost:8000/api/health")
         print("   • API Base: http://localhost:8000/api")
     else:
         print("\n⚠️  Configuration incomplète. Vérifiez les erreurs ci-dessus.")
