@@ -74,8 +74,8 @@ app.add_middleware(
         "http://localhost:3000",
         "http://127.0.0.1:3000",
         "http://localhost:5173",
-        # Add your Render frontend URL when you deploy it
-        "https://mecaflow-learn-1.onrender.com/"
+        "https://mecaflow-learn-1.onrender.com/",
+        "https://mecaflow-backend-production.up.railway.app"
     ],
     allow_credentials=True,
     allow_methods=["*"],
