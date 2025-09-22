@@ -15,15 +15,24 @@ COPY requirements.txt .
 # Create conda environment and install dependencies
 RUN conda create -n app-env python=3.11 && \
     conda install -n app-env -c conda-forge pythonocc-core && \
-    conda init bash && \
-    echo "conda activate app-env" > ~/.bashrc
+    conda init bash
 
 # Create a modified requirements file without OCC-Core
 RUN grep -v "OCC-Core" requirements.txt > requirements_docker.txt
 
 # Install Python dependencies
 SHELL ["/bin/bash", "-c"]
-RUN source ~/.bashrc && pip install --no-cache-dir -r requirements_docker.txt
+RUN eval "$(conda shell.bash hook)" && \
+    conda activate app-env && \
+    pip install --no-cache-dir -r requirements_docker.txt
+
+# Copy application code
+COPY . .
+
+# Start FastAPI application
+CMD eval "$(conda shell.bash hook)" && \
+    conda activate app-env && \
+    uvicorn main:app --host 0.0.0.0 --port $PORT
 
 # Copy application code
 COPY . .
