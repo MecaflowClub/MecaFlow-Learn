@@ -3,7 +3,8 @@ FROM python:3.11-slim
 # Install system dependencies for OpenCascade
 RUN apt-get update && apt-get install -y \
     python3-pip \
-    libgl1-mesa-glx \
+    libgl1 \
+    libglu1-mesa \
     && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
