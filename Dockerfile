@@ -1,5 +1,11 @@
 FROM continuumio/miniconda3:latest AS builder
 
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
+
 # Set working directory
 WORKDIR /app
 
@@ -8,7 +14,7 @@ COPY requirements.txt .
 
 # Create conda environment and install dependencies
 RUN conda create -n app-env python=3.11 --no-deps && \
-    conda install -n app-env -c conda-forge pythonocc-core --no-deps && \
+    conda install -n app-env -c conda-forge pythonocc-core && \
     conda clean -afy && \
     conda init bash
 
@@ -24,10 +30,11 @@ RUN eval "$(conda shell.bash hook)" && \
 # Second stage
 FROM python:3.11-slim
 
-# Install only required system dependencies
+# Install required runtime dependencies
 RUN apt-get update && apt-get install -y \
     libgl1 \
     libglu1-mesa \
+    libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
