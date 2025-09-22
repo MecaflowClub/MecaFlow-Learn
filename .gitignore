@@ -31,10 +31,11 @@ ENV/
 node_modules/
 
 # Uploads and Data
-uploads/student-files/*
+uploads/*
+!uploads/reference-files/
+!uploads/reference-files/**
+!uploads/student-files/
 !uploads/student-files/.gitkeep
-uploads/reference-files/*
-!uploads/reference-files/.gitkeep
 temp/
 *.tmp
 
