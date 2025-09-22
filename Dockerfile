@@ -1,10 +1,4 @@
-FROM continuumio/miniconda3:latest
-
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    libgl1 \
-    libglu1-mesa \
-    && rm -rf /var/lib/apt/lists/*
+FROM continuumio/miniconda3:latest AS builder
 
 # Set working directory
 WORKDIR /app
@@ -13,8 +7,9 @@ WORKDIR /app
 COPY requirements.txt .
 
 # Create conda environment and install dependencies
-RUN conda create -n app-env python=3.11 && \
-    conda install -n app-env -c conda-forge pythonocc-core && \
+RUN conda create -n app-env python=3.11 --no-deps && \
+    conda install -n app-env -c conda-forge pythonocc-core --no-deps && \
+    conda clean -afy && \
     conda init bash
 
 # Create a modified requirements file without OCC-Core
@@ -26,13 +21,26 @@ RUN eval "$(conda shell.bash hook)" && \
     conda activate app-env && \
     pip install --no-cache-dir -r requirements_docker.txt
 
+# Second stage
+FROM python:3.11-slim
+
+# Install only required system dependencies
+RUN apt-get update && apt-get install -y \
+    libgl1 \
+    libglu1-mesa \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy conda environment from builder
+COPY --from=builder /opt/conda/envs/app-env /opt/conda/envs/app-env
+ENV PATH=/opt/conda/envs/app-env/bin:$PATH
+
 # Copy application code
 COPY . .
 
 # Start FastAPI application
-CMD eval "$(conda shell.bash hook)" && \
-    conda activate app-env && \
-    uvicorn main:app --host 0.0.0.0 --port $PORT
+CMD uvicorn main:app --host 0.0.0.0 --port $PORT
 
 # Copy application code
 COPY . .
