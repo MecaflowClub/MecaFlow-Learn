@@ -38,10 +38,15 @@ app = FastAPI(
 
 @app.get("/health", tags=["health"])
 async def health_check():
-    return {
-        "status": "healthy",
-        "timestamp": datetime.utcnow().isoformat(),
-    }
+    try:
+        # Verify database connection
+        await users_collection.find_one({})
+        return {
+            "status": "healthy",
+            "timestamp": datetime.utcnow().isoformat()
+        }
+    except Exception as e:
+        return {
             "status": "unhealthy",
             "timestamp": datetime.utcnow().isoformat(),
             "error": str(e)
