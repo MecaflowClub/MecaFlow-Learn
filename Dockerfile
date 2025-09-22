@@ -1,8 +1,7 @@
-FROM python:3.11-slim
+FROM continuumio/miniconda3:latest
 
-# Install system dependencies for OpenCascade
+# Install system dependencies
 RUN apt-get update && apt-get install -y \
-    python3-pip \
     libgl1 \
     libglu1-mesa \
     && rm -rf /var/lib/apt/lists/*
@@ -10,9 +9,21 @@ RUN apt-get update && apt-get install -y \
 # Set working directory
 WORKDIR /app
 
-# Copy requirements and install Python dependencies
+# Copy requirements first for better caching
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+
+# Create conda environment and install dependencies
+RUN conda create -n app-env python=3.11 && \
+    conda install -n app-env -c conda-forge pythonocc-core && \
+    conda init bash && \
+    echo "conda activate app-env" > ~/.bashrc
+
+# Create a modified requirements file without OCC-Core
+RUN grep -v "OCC-Core" requirements.txt > requirements_docker.txt
+
+# Install Python dependencies
+SHELL ["/bin/bash", "-c"]
+RUN source ~/.bashrc && pip install --no-cache-dir -r requirements_docker.txt
 
 # Copy application code
 COPY . .
