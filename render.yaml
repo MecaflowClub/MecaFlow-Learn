@@ -3,14 +3,8 @@ services:
     name: mecaflow-backend
     env: python
     runtime: python3.11
-    buildCommand: |
-      pip install --upgrade pip wheel setuptools && \
-      pip install OCC-Core --no-deps && \
-      pip install -r requirements.txt
-    startCommand: |
-      mkdir -p /tmp/.X11-unix && \
-      Xvfb :99 -screen 0 1024x768x16 & \
-      uvicorn main:app --host 0.0.0.0 --port $PORT --workers 2
+    buildCommand: pip install --upgrade pip wheel setuptools && pip install OCC-Core --no-deps && pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT --workers 2
     envVars:
       # MongoDB configuration
       - key: MONGO_URL
