@@ -16,7 +16,7 @@ from auth import (
     require_admin, get_password_hash, create_refresh_token, verify_refresh_token,
     verify_password, pwd_context
 )
-from database import users_collection, exercises_collection, submissions_collection, courses_collection
+from database import init_db, users_collection, exercises_collection, submissions_collection, courses_collection
 from services.occComparison import compare_models
 from utils.email_utils import send_verification_code
 import random
@@ -37,31 +37,35 @@ app = FastAPI(
     version="1.0.0"
 )
 
-@app.get("/health", tags=["health"])
+@app.on_event("startup")
+async def startup_event():
+    """Initialize database connection on startup"""
+    try:
+        # Initialize database with retries
+        for attempt in range(3):
+            try:
+                await init_db()
+                logging.info("Database initialized successfully")
+                return
+            except Exception as e:
+                if attempt == 2:  # Last attempt
+                    raise
+                logging.warning(f"Database initialization attempt {attempt + 1} failed, retrying...")
+                await asyncio.sleep(5)
+    except Exception as e:
+        logging.error(f"Failed to initialize database: {str(e)}")
+        raise RuntimeError(f"Could not initialize database: {str(e)}")
+
+@app.get("/health")
 async def health_check():
-    max_retries = 3
-    retry_delay = 5  # seconds
-    
-    for attempt in range(max_retries):
-        try:
-            # Verify database connection
-            await users_collection.find_one({})
-            return {
-                "status": "healthy",
-                "timestamp": datetime.utcnow().isoformat(),
-                "database": "connected",
-                "attempt": attempt + 1
-            }
-        except Exception as e:
-            if attempt < max_retries - 1:
-                await asyncio.sleep(retry_delay)
-                continue
-            return {
-                "status": "unhealthy",
-                "timestamp": datetime.utcnow().isoformat(),
-                "error": str(e),
-                "attempt": attempt + 1
-            }
+    try:
+        if users_collection is None:
+            return {"status": "unhealthy", "reason": "database not initialized"}
+        await users_collection.find_one({})
+        return {"status": "healthy"}
+    except Exception as e:
+        logging.error(f"Health check failed: {str(e)}")
+        return {"status": "unhealthy"}
 
 # Middleware CORS
 app.add_middleware(
@@ -1159,10 +1163,7 @@ async def compare_cad(
 def root():
     return {"message": "CAD Platform API", "status": "running", "docs": "/docs"}
 
-@app.get("/health")
-def health():
-    logger.info("Vérification de santé du backend")
-    return {"status": "healthy", "timestamp": datetime.utcnow()}
+# Health check endpoint is already defined above
 
 # =============================================================================
 # LANCEMENT UVICORN
