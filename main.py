@@ -1,6 +1,7 @@
 from typing import Optional, Any, Dict, List
 from datetime import datetime, timedelta
 from bson import ObjectId
+import asyncio
 from fastapi import FastAPI, HTTPException, Depends, Body, File, UploadFile, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer
@@ -38,19 +39,29 @@ app = FastAPI(
 
 @app.get("/health", tags=["health"])
 async def health_check():
-    try:
-        # Verify database connection
-        await users_collection.find_one({})
-        return {
-            "status": "healthy",
-            "timestamp": datetime.utcnow().isoformat()
-        }
-    except Exception as e:
-        return {
-            "status": "unhealthy",
-            "timestamp": datetime.utcnow().isoformat(),
-            "error": str(e)
-        }
+    max_retries = 3
+    retry_delay = 5  # seconds
+    
+    for attempt in range(max_retries):
+        try:
+            # Verify database connection
+            await users_collection.find_one({})
+            return {
+                "status": "healthy",
+                "timestamp": datetime.utcnow().isoformat(),
+                "database": "connected",
+                "attempt": attempt + 1
+            }
+        except Exception as e:
+            if attempt < max_retries - 1:
+                await asyncio.sleep(retry_delay)
+                continue
+            return {
+                "status": "unhealthy",
+                "timestamp": datetime.utcnow().isoformat(),
+                "error": str(e),
+                "attempt": attempt + 1
+            }
 
 # Middleware CORS
 app.add_middleware(
