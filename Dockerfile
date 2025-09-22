@@ -13,19 +13,18 @@ WORKDIR /app
 COPY requirements.txt .
 
 # Create conda environment and install dependencies
-RUN conda create -n app-env python=3.11 --no-deps && \
+RUN conda create -n app-env python=3.11 && \
     conda install -n app-env -c conda-forge pythonocc-core && \
     conda clean -afy && \
-    conda init bash
+    conda init bash && \
+    echo "conda activate app-env" >> ~/.bashrc
 
 # Create a modified requirements file without OCC-Core
 RUN grep -v "OCC-Core" requirements.txt > requirements_docker.txt
 
 # Install Python dependencies
 SHELL ["/bin/bash", "-c"]
-RUN eval "$(conda shell.bash hook)" && \
-    conda activate app-env && \
-    pip install --no-cache-dir -r requirements_docker.txt
+RUN /opt/conda/envs/app-env/bin/pip install --no-cache-dir -r requirements_docker.txt
 
 # Second stage
 FROM python:3.11-slim
