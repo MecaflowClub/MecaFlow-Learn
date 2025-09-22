@@ -16,7 +16,7 @@ from auth import (
     verify_password, pwd_context
 )
 from database import users_collection, exercises_collection, submissions_collection, courses_collection
-from services.comparisonService import compare_step_models, compare_assemblies
+from services.occComparison import compare_models
 from utils.email_utils import send_verification_code
 import random
 import os
@@ -789,11 +789,11 @@ async def submit_exercise(
                 cad_result = {"success": False, "error": "Fichier de référence introuvable"}
             else:
                 try:
-                    from services.compareDXF import compare_dxf_external
+                    from services.dxfComparison import compare_dxf
                 except Exception:
-                    cad_result = {"success": False, "error": "Erreur d'importation du module de comparaison DXF (FreeCAD/PySide2 non disponible)"}
+                    cad_result = {"success": False, "error": "Erreur d'importation du module de comparaison DXF"}
                 else:
-                    cad_result = compare_dxf_external(path, reference_path)
+                    cad_result = compare_dxf(path, reference_path)
 
         # QCM scoring
         quiz_answers = None
@@ -831,35 +831,34 @@ async def submit_exercise(
         result = await submissions_collection.insert_one(sub_dict)
         sub_dict["_id"] = str(result.inserted_id)
 
-        # Progress/score update only if score >= 80
-        if isinstance(cad_result, dict) and cad_result.get("success"):
-            if total_score >= 80:
-                uid_obj = to_objectid(current_user.get("_id"))
-                user_filter = {"_id": uid_obj} if uid_obj else {"email": current_user.get("email")}
-                await users_collection.update_one(
-                    user_filter,
-                    {"$addToSet": {"completedExercises": exercise_id}}
-                )
-                await users_collection.update_one(
-                    user_filter,
-                    {"$pull": {"scores": {"exercise_id": exercise_id}}}
-                )
-                await users_collection.update_one(
-                    user_filter,
-                    {"$push": {"scores": {"exercise_id": exercise_id, "score": total_score}}}
-                )
-                # Update progress
-                all_ex_cursor = exercises_collection.find({"course_id": course_id_raw})
-                all_ex_ids = [str(e["_id"]) async for e in all_ex_cursor]
-                latest_user = await users_collection.find_one(user_filter)
-                completed = set(latest_user.get("completedExercises", [])) if latest_user else set()
-                completed_count = len([eid for eid in all_ex_ids if eid in completed])
-                total_count = len(all_ex_ids)
-                await users_collection.update_one(
-                    user_filter,
-                    {"$set": {f"progress.{level}": {"completed": completed_count, "total": total_count}}}
-                )
-                await users_collection.update_one(user_filter, {"$set": {"updatedAt": datetime.utcnow()}})
+        # Progress/score update only if total score >= 90
+        if total_score >= 90:  # Exercise is successful based on total score only
+            uid_obj = to_objectid(current_user.get("_id"))
+            user_filter = {"_id": uid_obj} if uid_obj else {"email": current_user.get("email")}
+            await users_collection.update_one(
+                user_filter,
+                {"$addToSet": {"completedExercises": exercise_id}}
+            )
+            await users_collection.update_one(
+                user_filter,
+                {"$pull": {"scores": {"exercise_id": exercise_id}}}
+            )
+            await users_collection.update_one(
+                user_filter,
+                {"$push": {"scores": {"exercise_id": exercise_id, "score": total_score}}}
+            )
+            # Update progress
+            all_ex_cursor = exercises_collection.find({"course_id": course_id_raw})
+            all_ex_ids = [str(e["_id"]) async for e in all_ex_cursor]
+            latest_user = await users_collection.find_one(user_filter)
+            completed = set(latest_user.get("completedExercises", [])) if latest_user else set()
+            completed_count = len([eid for eid in all_ex_ids if eid in completed])
+            total_count = len(all_ex_ids)
+            await users_collection.update_one(
+                user_filter,
+                {"$set": {f"progress.{level}": {"completed": completed_count, "total": total_count}}}
+            )
+            await users_collection.update_one(user_filter, {"$set": {"updatedAt": datetime.utcnow()}})
         return {"success": True, "submission": serialize_doc(sub_dict)}
 
     # --- Special case: manual validation exercises ---
@@ -914,18 +913,9 @@ async def submit_exercise(
         if not reference_path or not os.path.exists(reference_path):
             cad_result = {"success": False, "error": "Fichier de référence introuvable"}
         else:
-            # Use exercise metadata to determine type
-            ex_type = ex.get("type", "part")  # default to 'part' if not specified
-            from services.comparisonService import _import_freecad
-            FreeCAD, Part = _import_freecad()
-            doc = FreeCAD.newDocument()
-            shape = Part.Shape()
-            shape.read(reference_path)
-            FreeCAD.closeDocument(doc.Name)
-            if ex_type == "assembly":
-                cad_result = compare_assemblies(path, reference_path)
-            else:
-                cad_result = compare_step_models(path, reference_path)
+            # Use OpenCascade for both parts and assemblies
+            from services.occComparison import compare_models
+            cad_result = compare_models(path, reference_path)
     except Exception as e:
         cad_result = {"success": False, "error": str(e)}
 
@@ -1110,23 +1100,30 @@ async def compare_cad(
 
     logger.info(f"[API] Comparaison : submitted_part={sub_path}, reference_part={ref_path}")
 
-    from services.comparisonService import _import_freecad
-    FreeCAD, Part = _import_freecad()
-    doc = FreeCAD.newDocument()
-    shape = Part.Shape()
-    shape.read(ref_path)
-    n_solids = len(shape.Solids)
-    FreeCAD.closeDocument(doc.Name)
+    try:
+        from services.occComparison import compare_models, read_step_file, get_solids_from_shape
 
-    if mode == "auto":
-        mode = "assembly" if n_solids > 1 else "step"
+        # Check if it's an assembly or a single part
+        ref_shape = read_step_file(ref_path)
+        n_solids = len(get_solids_from_shape(ref_shape))
 
-    if mode == "assembly":
-        feedback = compare_assemblies(sub_path, ref_path, tol=tol)
-        return {"mode": "assembly", "feedback": feedback}
-    else:
-        result = compare_step_models(sub_path, ref_path, tol=tol)
-        return {"mode": "step", **result}
+        if mode == "auto":
+            mode = "assembly" if n_solids > 1 else "step"
+
+        # Use the same OpenCascade comparison for both modes
+        feedback = compare_models(sub_path, ref_path, tol=tol)
+        return {"mode": mode, "feedback": feedback}
+
+    except Exception as e:
+        logger.error(f"Error in CAD comparison: {str(e)}")
+        return {
+            "mode": mode,
+            "feedback": {
+                "success": False,
+                "error": str(e),
+                "global_score": 0
+            }
+        }
 
 # =============================================================================
 # TEST ROUTES

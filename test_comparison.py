@@ -1,6 +1,6 @@
 # test_comparison.py
 from fastapi import FastAPI, HTTPException
-from services.comparisonService import compare_step_models
+from services.occComparison import compare_models
 
 import os
 
@@ -23,7 +23,7 @@ def compare_parts():
         if not os.path.exists(sub_path):
             raise HTTPException(status_code=404, detail="Fichier soumis introuvable")
 
-        result = compare_step_models(sub_path, ref_path)
+        result = compare_models(sub_path, ref_path)
 
         return result
 
