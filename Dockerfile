@@ -42,11 +42,18 @@ WORKDIR /app
 COPY --from=builder /opt/conda/envs/app-env /opt/conda/envs/app-env
 ENV PATH=/opt/conda/envs/app-env/bin:$PATH
 
+# Install curl for healthcheck
+RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+
 # Copy application code
 COPY . .
 
+# Add healthcheck
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:${PORT}/health || exit 1
+
 # Start FastAPI application
-CMD uvicorn main:app --host 0.0.0.0 --port $PORT
+CMD uvicorn main:app --host 0.0.0.0 --port ${PORT} --workers 1 --timeout-keep-alive 75
 
 # Copy application code
 COPY . .
