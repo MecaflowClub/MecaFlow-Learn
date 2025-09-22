@@ -38,16 +38,10 @@ app = FastAPI(
 
 @app.get("/health", tags=["health"])
 async def health_check():
-    try:
-        # Basic MongoDB connection check
-        await users_collection.find_one({})
-        return {
-            "status": "healthy",
-            "timestamp": datetime.utcnow().isoformat(),
-            "database": "connected"
-        }
-    except Exception as e:
-        return {
+    return {
+        "status": "healthy",
+        "timestamp": datetime.utcnow().isoformat(),
+    }
             "status": "unhealthy",
             "timestamp": datetime.utcnow().isoformat(),
             "error": str(e)
