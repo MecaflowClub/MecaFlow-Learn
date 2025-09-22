@@ -3,14 +3,8 @@ services:
     name: mecaflow-backend
     env: python
     runtime: python3.11
-    buildCommand: |
-      apt-get update && \
-      apt-get install -y python3-pip python3-dev libgl1-mesa-glx libglu1-mesa xvfb && \
-      python -m pip install --upgrade pip && \
-      python -m pip install -r requirements.txt
-    startCommand: |
-      Xvfb :99 -screen 0 1024x768x16 & \
-      uvicorn main:app --host 0.0.0.0 --port $PORT --workers 2
+    buildCommand: python -m pip install --upgrade pip && pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT --workers 2
     envVars:
       # MongoDB configuration
       - key: MONGO_URL
@@ -26,11 +20,13 @@ services:
       - key: ACCESS_TOKEN_EXPIRE_MINUTES
         value: "180"
 
-      # Display configuration for OpenCascade
+      # OpenCascade configuration
+      - key: PYTHONPATH
+        value: "/usr/local/lib/python3.11/site-packages"
+      - key: LD_LIBRARY_PATH
+        value: "/usr/local/lib"
       - key: DISPLAY
         value: ":99"
-      - key: PYTHONPATH
-        value: "${PYTHONPATH:-}"
     region: frankfurt
     plan: free
     autoDeploy: true
