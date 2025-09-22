@@ -42,21 +42,27 @@ WORKDIR /app
 COPY --from=builder /opt/conda/envs/app-env /opt/conda/envs/app-env
 ENV PATH=/opt/conda/envs/app-env/bin:$PATH
 
-# Install curl for healthcheck
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+# Install curl and wait-for-it for healthcheck
+RUN apt-get update && apt-get install -y curl wget && \
+    wget -O /usr/local/bin/wait-for-it.sh https://raw.githubusercontent.com/vishnubob/wait-for-it/master/wait-for-it.sh && \
+    chmod +x /usr/local/bin/wait-for-it.sh && \
+    rm -rf /var/lib/apt/lists/*
 
 # Copy application code
 COPY . .
 
-# Add healthcheck
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+# Add healthcheck with more detailed output
+HEALTHCHECK --interval=10s --timeout=30s --start-period=30s --retries=3 \
     CMD curl -f http://localhost:${PORT}/health || exit 1
 
-# Start FastAPI application
-CMD uvicorn main:app --host 0.0.0.0 --port ${PORT} --workers 1 --timeout-keep-alive 75
+# Create startup script
+RUN echo '#!/bin/bash\n\
+wait-for-it.sh localhost:${PORT} -t 30 -- echo "Application is up!"\n\
+exec uvicorn main:app --host 0.0.0.0 --port ${PORT} --workers 1 --timeout-keep-alive 75 --log-level debug\n\
+' > /app/start.sh && chmod +x /app/start.sh
 
-# Copy application code
-COPY . .
+# Start FastAPI application
+CMD ["/app/start.sh"]
 
 # Set environment variables
 ENV PYTHONPATH=/usr/local/lib/python3.11/site-packages

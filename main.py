@@ -36,9 +36,22 @@ app = FastAPI(
     version="1.0.0"
 )
 
-@app.get("/health")
+@app.get("/health", tags=["health"])
 async def health_check():
-    return {"status": "healthy"}
+    try:
+        # Basic MongoDB connection check
+        await users_collection.find_one({})
+        return {
+            "status": "healthy",
+            "timestamp": datetime.utcnow().isoformat(),
+            "database": "connected"
+        }
+    except Exception as e:
+        return {
+            "status": "unhealthy",
+            "timestamp": datetime.utcnow().isoformat(),
+            "error": str(e)
+        }
 
 # Middleware CORS
 app.add_middleware(
