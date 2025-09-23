@@ -172,7 +172,7 @@ def compare_models(submitted_path: str, reference_path: str, tol: float = 1e-3) 
         dims_score = sum(dims_pct) / len(dims_pct)
         feedback["dimensions"] = {"ok": all(dims_ok), "score": dims_score}
         score += dims_score
-        total += 100
+        total += 1
 
         # Volume
         vol_ok = abs(sub_props["volume"] - ref_props["volume"]) <= tol * max(abs(ref_props["volume"]), 1)
@@ -180,14 +180,14 @@ def compare_models(submitted_path: str, reference_path: str, tol: float = 1e-3) 
                               (abs(ref_props["volume"]) if abs(ref_props["volume"]) > 1e-6 else 1))
         feedback["volume"] = {"ok": vol_ok, "score": vol_score}
         score += vol_score
-        total += 100
+        total += 1
 
         # Topology
         topo_ok = sub_props["topology"] == ref_props["topology"]
         topo_score = 100 if topo_ok else 0
         feedback["topology"] = {"ok": topo_ok, "score": topo_score}
         score += topo_score
-        total += 100
+        total += 1
 
         # Moments of inertia
         pm_ok = all(abs(s - r) <= tol * max(abs(r), 1)
@@ -195,8 +195,9 @@ def compare_models(submitted_path: str, reference_path: str, tol: float = 1e-3) 
         pm_score = 100 if pm_ok else 0
         feedback["principal_moments"] = {"ok": pm_ok, "score": pm_score}
         score += pm_score
-        total += 100
+        total += 1
 
+        # Calculate global score (average of all scores)
         global_score = round(score / total, 1)
         feedback["global_score"] = global_score
         feedback["success"] = global_score >= 80
