@@ -1067,12 +1067,21 @@ async def submit_exercise(
         buffer.write(content)
 
     try:
+        # Get reference file path from exercise
         reference_path = ex.get("solution_file_path")
-        if not reference_path or not os.path.exists(reference_path):
-            cad_result = {"success": False, "error": "Fichier de référence introuvable"}
+        if not reference_path:
+            cad_result = {"success": False, "error": "Chemin du fichier de référence non défini dans l'exercice"}
         else:
-            # Use OpenCascade for both parts and assemblies
-            from services.occComparison import compare_models, get_solids_from_shape, read_step_file
+            # Ensure the reference path is absolute
+            if not os.path.isabs(reference_path):
+                # Si le chemin est relatif, le convertir en absolu par rapport au répertoire de l'application
+                reference_path = os.path.join(os.path.dirname(__file__), reference_path)
+            
+            if not os.path.exists(reference_path):
+                cad_result = {"success": False, "error": f"Fichier de référence introuvable: {reference_path}"}
+            else:
+                # Use OpenCascade for both parts and assemblies
+                from services.occComparison import compare_models, get_solids_from_shape, read_step_file
 
             # Pour les exercices de surfacing (advanced, exercices spécifiques)
             if level == "advanced" and order in [15, 16, 17]:  # exercices de surfacing
