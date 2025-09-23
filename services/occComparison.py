@@ -50,14 +50,28 @@ def get_solid_properties(solid):
     dimensions = (xmax-xmin, ymax-ymin, zmax-zmin)
     
     # Topology
+    num_faces = 0
     face_explorer = TopExp_Explorer(solid, TopAbs_FACE)
+    while face_explorer.More():
+        num_faces += 1
+        face_explorer.Next()
+
+    num_edges = 0
     edge_explorer = TopExp_Explorer(solid, TopAbs_EDGE)
+    while edge_explorer.More():
+        num_edges += 1
+        edge_explorer.Next()
+
+    num_vertices = 0
     vert_explorer = TopExp_Explorer(solid, TopAbs_VERTEX)
+    while vert_explorer.More():
+        num_vertices += 1
+        vert_explorer.Next()
     
     topology = {
-        "faces": sum(1 for _ in face_explorer),
-        "edges": sum(1 for _ in edge_explorer),
-        "vertices": sum(1 for _ in vert_explorer)
+        "faces": num_faces,
+        "edges": num_edges,
+        "vertices": num_vertices
     }
     
     # Principal moments of inertia
