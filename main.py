@@ -997,23 +997,34 @@ async def submit_exercise(
         total_score = round(cad_score + qcm_score, 2)
         feedback = f"DXF: {cad_score}/90, QCM: {qcm_score}/10 ({correct_count}/{total_questions} correct)"
     else:
-        feedback = cad_result.get("feedback", {}) if isinstance(cad_result, dict) else {}
-        cad_score = feedback.get("global_score", 0) if isinstance(feedback, dict) else 0
-        cad_score = min(cad_score, 90)
-        # Always parse quizAnswers for QCM scoring
+        # Get CAD score from cad_result (not from feedback)
+        cad_score = cad_result.get("global_score", 0) if isinstance(cad_result, dict) else 0
+        # Scale the score from 100 to 90 points
+        # Scale the CAD score from 100 to 90 points
+        cad_score = round((cad_score * 90) / 100, 1) if cad_score > 0 else 0
+        
+        # Parse quiz answers
         quiz_answers = None
         if quizAnswers:
             try:
                 quiz_answers = json.loads(quizAnswers)
             except Exception:
                 quiz_answers = None
+        
+        # Calculate QCM score
         qcm = ex.get("qcm", [])
         qcm_score, correct_count, total_questions = calculate_qcm_score(quiz_answers, qcm)
+        
+        # Calculate total score
         total_score = round(cad_score + qcm_score, 2)
+        
+        # Build feedback message
         shell_msg = ""
-        pm_feedback = feedback.get("principal_moments", {})
-        if isinstance(pm_feedback, dict) and pm_feedback.get("message") and "coques" in pm_feedback["message"]:
-            shell_msg = " (Attention: modèle à coques/surfaces, moments principaux non calculés)"
+        if isinstance(cad_result, dict) and isinstance(cad_result.get("principal_moments"), dict):
+            pm_data = cad_result["principal_moments"]
+            if pm_data.get("message") and "coques" in pm_data["message"]:
+                shell_msg = " (Attention: modèle à coques/surfaces, moments principaux non calculés)"
+        
         feedback = f"CAD: {cad_score}/90, QCM: {qcm_score}/10 ({correct_count}/{total_questions} correct){shell_msg}"
 
     sub_dict = {
