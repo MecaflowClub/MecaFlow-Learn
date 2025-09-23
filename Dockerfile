@@ -57,9 +57,8 @@ ENV PYTHONUNBUFFERED=1
 HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=3 \
     CMD curl -f http://localhost:8000/api/health || exit 1
 
-# Copy and set permissions for startup script
-COPY start.sh /app/start.sh
-RUN chmod +x /app/start.sh
+# Set default port
+ENV PORT=8000
 
-# Start FastAPI application
-CMD ["/app/start.sh"]
+# Start FastAPI application using the Docker-specific runner
+CMD ["python", "docker_run.py"]
