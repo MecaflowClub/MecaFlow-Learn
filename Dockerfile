@@ -59,9 +59,9 @@ ENV PORT=8000
 ENV RAILWAY_STATIC_URL=https://mecaflow-backend-production.up.railway.app
 
 # Add healthcheck with longer intervals and startup period
-# Use RAILWAY_STATIC_URL in production, fallback to localhost for local development
+# Use RAILWAY_STATIC_URL in production, fallback to 0.0.0.0 for local development
 HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=3 \
-    CMD curl -f ${RAILWAY_STATIC_URL:-http://localhost:8000}/api/health || exit 1
+    CMD curl -f ${RAILWAY_STATIC_URL:-http://0.0.0.0:8000}/api/health || exit 1
 
 # Start FastAPI application using the Docker-specific runner with full path
 CMD ["python", "/app/docker_run.py"]
