@@ -3,11 +3,11 @@ builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"
 
 [deploy]
-healthcheckPath = "${HEALTH_CHECK_PATH:-/api/health}"
+healthcheckPath = "/api/health"
 healthcheckTimeout = 120
 startupDelay = "90s"
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 5
 
 [start]
-cmd = "uvicorn main:app --host 0.0.0.0 --port 8000 --workers 2"
+cmd = "uvicorn main:app --host 0.0.0.0 --port 8000 --workers 1"

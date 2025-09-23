@@ -51,9 +51,9 @@ ENV LD_LIBRARY_PATH=/usr/local/lib
 ENV PYTHONUNBUFFERED=1
 ENV DOCKER_RUN_PATH=/app/docker_run.py
 
-# Healthcheck (always calls fixed port 8000)
+# Healthcheck configuration
 HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=3 \
-    CMD curl -f http://0.0.0.0:8000/api/health || exit 1
+    CMD curl -f "http://0.0.0.0:8000/api/health" || exit 1
 
 # Entrypoint
 RUN echo '#!/bin/bash\n\
