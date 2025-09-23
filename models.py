@@ -94,7 +94,7 @@ class ExerciseModel(BaseModel):
     created_by: str
     createdAt: datetime = Field(default_factory=datetime.utcnow)
     updatedAt: datetime = Field(default_factory=datetime.utcnow)
-    order: Optional[int] = None  # <-- AJOUTER cette ligne
+    order: int = Field(...)  # Required field for ordering exercises
 
 # -------------------------------
 # SUBMISSION MODEL

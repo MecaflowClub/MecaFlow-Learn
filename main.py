@@ -623,7 +623,22 @@ async def create_courses_bulk(
 @app.get("/api/courses")
 async def list_courses():
     courses = []
-    cursor = courses_collection.find()
+    # Sort courses by level (beginner -> intermediate -> advanced) and creation date
+    level_order = {
+        "beginner": 1,
+        "intermediate": 2,
+        "advanced": 3
+    }
+    pipeline = [
+        {"$addFields": {"level_order": {"$switch": {"branches": [
+            {"case": {"$eq": ["$level", "beginner"]}, "then": 1},
+            {"case": {"$eq": ["$level", "intermediate"]}, "then": 2},
+            {"case": {"$eq": ["$level", "advanced"]}, "then": 3}
+        ], "default": 4}}}},
+        {"$sort": {"level_order": 1, "createdAt": 1}},
+        {"$project": {"level_order": 0}}  # Remove the temporary field
+    ]
+    cursor = courses_collection.aggregate(pipeline)
     async for course in cursor:
         courses.append(serialize_doc(course))
     return {"success": True, "courses": courses}
@@ -664,9 +679,19 @@ async def delete_course(course_id: str, current_user: dict = Depends(require_adm
 # EXERCISES
 # =============================================================================
 @app.get("/api/exercises")
-async def list_exercises(skip: int = Query(0), limit: int = Query(100)):
+async def list_exercises(skip: int = Query(0), limit: int = Query(100), course_id: Optional[str] = None):
+    # Create base query
+    query = {"is_active": True}
+    if course_id:
+        query["course_id"] = course_id
+        
     exercises = []
-    cursor = exercises_collection.find().skip(skip).limit(limit)
+    # Sort exercises by order field first, then by creation date
+    cursor = exercises_collection.find(query).sort([
+        ("order", 1),  # Primary sort by explicit order
+        ("createdAt", 1)  # Secondary sort by creation date
+    ]).skip(skip).limit(limit)
+    
     async for ex in cursor:
         exercises.append(serialize_doc(ex))
     return {"success": True, "exercises": exercises}
