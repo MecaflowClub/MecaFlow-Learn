@@ -49,11 +49,12 @@ RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 COPY . .
 
 # Set environment variables
-ENV PYTHONPATH=/usr/local/lib/python3.11/site-packages
+ENV PYTHONPATH=/app:/usr/local/lib/python3.11/site-packages
 ENV LD_LIBRARY_PATH=/usr/local/lib
 ENV PYTHONUNBUFFERED=1
+ENV DOCKER_RUN_PATH=/app/docker_run.py
 
-# Set environment variables
+# Set application variables
 ENV PORT=8000
 ENV RAILWAY_STATIC_URL=https://mecaflow-backend-production.up.railway.app
 
@@ -62,5 +63,5 @@ ENV RAILWAY_STATIC_URL=https://mecaflow-backend-production.up.railway.app
 HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=3 \
     CMD curl -f ${RAILWAY_STATIC_URL:-http://localhost:8000}/api/health || exit 1
 
-# Start FastAPI application using the Docker-specific runner
-CMD ["python", "docker_run.py"]
+# Start FastAPI application using the Docker-specific runner with full path
+CMD ["python", "/app/docker_run.py"]
