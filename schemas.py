@@ -184,7 +184,7 @@ class ExerciseBase(BaseModel):
     drawing_url: Optional[str] = None
     qcm: Optional[List[dict]] = []
     course_id: Optional[str] = None
-    order: Optional[int] = None  # Added for classement/order
+    order: int  # Required field for exercise ordering
 
 class ExerciseCreate(ExerciseBase):
     pass

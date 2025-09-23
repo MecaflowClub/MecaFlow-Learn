@@ -746,8 +746,27 @@ async def create_exercise_api(exercise: ExerciseCreate, current_user: dict = Dep
     ex_dict["created_by"] = str(current_user.get("_id", current_user.get("id", "")))
     
     # Validate course exists if course_id is provided
-    if course_id := ex_dict.get("course_id"):
+    course_id = ex_dict.get("course_id")
+    if course_id:
         course_obj = to_objectid(course_id)
+        if not course_obj or not await courses_collection.find_one({"_id": course_obj}):
+            raise HTTPException(status_code=400, detail="Invalid course_id")
+        
+        # If order is not provided, get the next available order number for this course
+        if "order" not in ex_dict:
+            last_exercise = await exercises_collection.find_one(
+                {"course_id": course_id}, 
+                sort=[("order", -1)]
+            )
+            ex_dict["order"] = (last_exercise.get("order", 0) if last_exercise else 0) + 1
+    else:
+        # For exercises without a course, still ensure they have an order
+        if "order" not in ex_dict:
+            last_exercise = await exercises_collection.find_one(
+                {"course_id": None}, 
+                sort=[("order", -1)]
+            )
+            ex_dict["order"] = (last_exercise.get("order", 0) if last_exercise else 0) + 1
         if not course_obj or not await courses_collection.find_one({"_id": course_obj}):
             raise HTTPException(status_code=400, detail="Invalid course_id")
             
