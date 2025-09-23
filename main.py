@@ -1077,22 +1077,26 @@ async def submit_exercise(
             # Vérifier le type attendu (pièce ou assemblage)
             is_assembly = ex.get("type") == "assembly"
             
-            # Lire et analyser le fichier soumis
-            sub_shape = read_step_file(path)
-            sub_solids = get_solids_from_shape(sub_shape)
-            
-            if is_assembly and len(sub_solids) == 1:
-                cad_result = {
-                    "success": False, 
-                    "error": "Ce fichier contient une seule pièce mais l'exercice demande un assemblage"
-                }
-            elif not is_assembly and len(sub_solids) > 1:
-                cad_result = {
-                    "success": False, 
-                    "error": "Ce fichier contient un assemblage mais l'exercice demande une pièce unique"
-                }
-            else:
+            # Pour les exercices de surfacing (advanced, exercices spécifiques)
+            if level == "advanced" and order in [15, 16, 17]:  # Ajustez les numéros selon vos exercices de surfacing
                 cad_result = compare_models(path, reference_path)
+            else:
+                # Lire et analyser le fichier soumis
+                sub_shape = read_step_file(path)
+                sub_solids = get_solids_from_shape(sub_shape)
+                
+                if is_assembly and len(sub_solids) == 1:
+                    cad_result = {
+                        "success": False, 
+                        "error": "Ce fichier contient une seule pièce mais l'exercice demande un assemblage"
+                    }
+                elif not is_assembly and len(sub_solids) > 1:
+                    cad_result = {
+                        "success": False, 
+                        "error": "Ce fichier contient un assemblage mais l'exercice demande une pièce unique"
+                    }
+                else:
+                    cad_result = compare_models(path, reference_path)
     except Exception as e:
         cad_result = {"success": False, "error": str(e)}
 
