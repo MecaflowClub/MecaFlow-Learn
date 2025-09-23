@@ -1074,15 +1074,9 @@ async def submit_exercise(
         reference_path = ex.get("solution_file_path")
         if not reference_path:
             cad_result = {"success": False, "error": "Chemin du fichier de référence non défini dans l'exercice"}
+        elif not os.path.exists(reference_path):
+            cad_result = {"success": False, "error": f"Fichier de référence introuvable: {reference_path}"}
         else:
-            # Ensure the reference path is absolute
-            if not os.path.isabs(reference_path):
-                # Si le chemin est relatif, le convertir en absolu par rapport au répertoire de l'application
-                reference_path = os.path.join(os.path.dirname(__file__), reference_path)
-            
-            if not os.path.exists(reference_path):
-                cad_result = {"success": False, "error": f"Fichier de référence introuvable: {reference_path}"}
-            else:
 
                 # Pour les exercices de surfacing (advanced, exercices spécifiques)
                 if level == "advanced" and order in [15, 16, 17]:  # exercices de surfacing
