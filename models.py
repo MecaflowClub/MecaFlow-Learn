@@ -88,6 +88,7 @@ class ExerciseModel(BaseModel):
     hints: Optional[List[str]] = []  # Astuces
     comments: Optional[str] = ""  # Commentaires/notes
     drawing_url: Optional[str] = None  # Lien Drive du PDF de mise en plan
+    type: Optional[str] = "part"  # "part" ou "assembly"
     qcm: Optional[List[str]] = []  # Liste d'IDs d'exercices QCM liés
     course_id: Optional[str] = None  # Lien vers le cours parent
     is_active: bool = True
