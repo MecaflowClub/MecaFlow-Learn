@@ -74,7 +74,7 @@ app.add_middleware(
         "http://localhost:3000",
         "http://127.0.0.1:3000",
         "http://localhost:5173",
-        "https://mecaflow-learn-1.onrender.com",
+        "https://meca-flow-learn-1.vercel.app",
         "https://mecaflow-backend-production.up.railway.app"
     ],
     allow_credentials=True,
