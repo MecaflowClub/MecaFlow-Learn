@@ -730,8 +730,8 @@ async def get_course_exercises(course_id: str):
 
 @app.get("/api/exercises")
 async def list_exercises(skip: int = Query(0), limit: int = Query(100), course_id: Optional[str] = None):
-    # Create base query
-    query = {"is_active": True}
+    # Create base query without is_active filter first to see all exercises
+    query = {}
     if course_id:
         query["course_id"] = course_id
         
