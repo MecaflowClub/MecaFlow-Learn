@@ -648,10 +648,26 @@ async def get_course(course_id: str):
     obj = to_objectid(course_id)
     if not obj:
         raise HTTPException(status_code=400, detail="Invalid course id")
+    
+    # Get course details
     course = await courses_collection.find_one({"_id": obj})
     if not course:
         raise HTTPException(status_code=404, detail="Course not found")
-    return {"success": True, "course": serialize_doc(course)}
+    
+    # Get exercises for this course
+    exercises = []
+    cursor = exercises_collection.find({
+        "course_id": str(course["_id"]),
+        "is_active": True
+    }).sort([("order", 1), ("createdAt", 1)])
+    
+    async for ex in cursor:
+        exercises.append(serialize_doc(ex))
+    
+    course_data = serialize_doc(course)
+    course_data["exercises"] = exercises
+    
+    return {"success": True, "course": course_data}
 
 @app.put("/api/courses/{course_id}")
 async def update_course(course_id: str, course: CourseCreate, current_user: dict = Depends(require_teacher_or_admin)):
@@ -678,6 +694,30 @@ async def delete_course(course_id: str, current_user: dict = Depends(require_adm
 # =============================================================================
 # EXERCISES
 # =============================================================================
+
+@app.get("/api/courses/{course_id}/exercises")
+async def get_course_exercises(course_id: str):
+    obj = to_objectid(course_id)
+    if not obj:
+        raise HTTPException(status_code=400, detail="Invalid course id")
+        
+    # Verify course exists
+    course = await courses_collection.find_one({"_id": obj})
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found")
+    
+    # Get exercises for this course
+    exercises = []
+    cursor = exercises_collection.find({
+        "course_id": str(obj),
+        "is_active": True
+    }).sort([("order", 1), ("createdAt", 1)])
+    
+    async for ex in cursor:
+        exercises.append(serialize_doc(ex))
+    
+    return {"success": True, "exercises": exercises}
+
 @app.get("/api/exercises")
 async def list_exercises(skip: int = Query(0), limit: int = Query(100), course_id: Optional[str] = None):
     # Create base query
@@ -701,8 +741,29 @@ async def create_exercise_api(exercise: ExerciseCreate, current_user: dict = Dep
     ex_dict = exercise.dict(exclude_unset=True)
     ex_dict["createdAt"] = datetime.utcnow()
     ex_dict["updatedAt"] = datetime.utcnow()
+    
     # store creator id as string
     ex_dict["created_by"] = str(current_user.get("_id", current_user.get("id", "")))
+    
+    # Validate course exists if course_id is provided
+    if course_id := ex_dict.get("course_id"):
+        course_obj = to_objectid(course_id)
+        if not course_obj or not await courses_collection.find_one({"_id": course_obj}):
+            raise HTTPException(status_code=400, detail="Invalid course_id")
+            
+        # Get highest order number for this course and increment by 1
+        last_exercise = await exercises_collection.find_one(
+            {"course_id": course_id, "is_active": True},
+            sort=[("order", -1)]
+        )
+        ex_dict["order"] = (last_exercise.get("order", 0) if last_exercise else 0) + 1
+    else:
+        # If no course_id, this is a standalone exercise
+        ex_dict["order"] = 1
+    
+    # Ensure exercise is active by default
+    ex_dict["is_active"] = ex_dict.get("is_active", True)
+    
     # Enum -> str if necessary
     diff = ex_dict.get("difficulty")
     if diff is not None and hasattr(diff, "value"):
