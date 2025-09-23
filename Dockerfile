@@ -1,4 +1,4 @@
-FROM continuumio/miniconda3:latest AS builder
+FROM continuumio/miniconda3:latest AS builder 
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y \
@@ -6,7 +6,6 @@ RUN apt-get update && apt-get install -y \
     gcc \
     && rm -rf /var/lib/apt/lists/*
 
-# Set working directory
 WORKDIR /app
 
 # Copy requirements first for better caching
@@ -34,6 +33,7 @@ RUN apt-get update && apt-get install -y \
     libgl1 \
     libglu1-mesa \
     libgomp1 \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -41,9 +41,6 @@ WORKDIR /app
 # Copy conda environment from builder
 COPY --from=builder /opt/conda/envs/app-env /opt/conda/envs/app-env
 ENV PATH=/opt/conda/envs/app-env/bin:$PATH
-
-# Install curl for healthcheck
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
 # Copy application code
 COPY . .
@@ -54,21 +51,17 @@ ENV LD_LIBRARY_PATH=/usr/local/lib
 ENV PYTHONUNBUFFERED=1
 ENV DOCKER_RUN_PATH=/app/docker_run.py
 
-# Set application variables
-ENV PORT=8000
-ENV RAILWAY_STATIC_URL=https://mecaflow-backend-production.up.railway.app
-
-# Add healthcheck with longer intervals and startup period
-# Use RAILWAY_STATIC_URL in production, fallback to 0.0.0.0 for local development
+# Healthcheck (always calls fixed port 8000)
 HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=3 \
-    CMD curl -f ${RAILWAY_STATIC_URL:-http://0.0.0.0:8000}/api/health || exit 1
+    CMD curl -f http://0.0.0.0:8000/api/health || exit 1
 
-# Create a simple entrypoint script
+# Entrypoint
 RUN echo '#!/bin/bash\n\
-echo "Starting server..."\n\
+echo "Starting server on fixed port 8000"\n\
 exec python /app/docker_run.py\n\
-' > /app/entrypoint.sh \
-    && chmod +x /app/entrypoint.sh
+' > /app/entrypoint.sh && chmod +x /app/entrypoint.sh
 
-# Use the entrypoint script
 ENTRYPOINT ["/bin/bash", "/app/entrypoint.sh"]
+
+# Expose port (Railway will map its own $PORT externally)
+EXPOSE 8000
