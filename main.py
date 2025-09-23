@@ -1067,6 +1067,9 @@ async def submit_exercise(
         buffer.write(content)
 
     try:
+        # Import OpenCascade functions first
+        from services.occComparison import compare_models, get_solids_from_shape, read_step_file
+        
         # Get reference file path from exercise
         reference_path = ex.get("solution_file_path")
         if not reference_path:
@@ -1080,36 +1083,34 @@ async def submit_exercise(
             if not os.path.exists(reference_path):
                 cad_result = {"success": False, "error": f"Fichier de référence introuvable: {reference_path}"}
             else:
-                # Use OpenCascade for both parts and assemblies
-                from services.occComparison import compare_models, get_solids_from_shape, read_step_file
 
-            # Pour les exercices de surfacing (advanced, exercices spécifiques)
-            if level == "advanced" and order in [15, 16, 17]:  # exercices de surfacing
-                cad_result = compare_models(path, reference_path)
-            else:
-                # Lire et analyser le fichier soumis
-                sub_shape = read_step_file(path)
-                sub_solids = get_solids_from_shape(sub_shape)
-                
-                # Vérifier le type attendu (pièce ou assemblage)
-                # Si le type n'est pas spécifié, on détermine automatiquement basé sur le fichier de référence
-                ref_shape = read_step_file(reference_path)
-                ref_solids = get_solids_from_shape(ref_shape)
-                
-                is_assembly = len(ref_solids) > 1 if ex.get("type") is None else ex.get("type") == "assembly"
-                
-                if is_assembly and len(sub_solids) == 1:
-                    cad_result = {
-                        "success": False, 
-                        "error": "Ce fichier contient une seule pièce mais l'exercice demande un assemblage"
-                    }
-                elif not is_assembly and len(sub_solids) > 1:
-                    cad_result = {
-                        "success": False, 
-                        "error": "Ce fichier contient un assemblage mais l'exercice demande une pièce unique"
-                    }
-                else:
+                # Pour les exercices de surfacing (advanced, exercices spécifiques)
+                if level == "advanced" and order in [15, 16, 17]:  # exercices de surfacing
                     cad_result = compare_models(path, reference_path)
+                else:
+                    # Lire et analyser le fichier soumis
+                    sub_shape = read_step_file(path)
+                    sub_solids = get_solids_from_shape(sub_shape)
+                    
+                    # Vérifier le type attendu (pièce ou assemblage)
+                    # Si le type n'est pas spécifié, on détermine automatiquement basé sur le fichier de référence
+                    ref_shape = read_step_file(reference_path)
+                    ref_solids = get_solids_from_shape(ref_shape)
+                    
+                    is_assembly = len(ref_solids) > 1 if ex.get("type") is None else ex.get("type") == "assembly"
+                    
+                    if is_assembly and len(sub_solids) == 1:
+                        cad_result = {
+                            "success": False, 
+                            "error": "Ce fichier contient une seule pièce mais l'exercice demande un assemblage"
+                        }
+                    elif not is_assembly and len(sub_solids) > 1:
+                        cad_result = {
+                            "success": False, 
+                            "error": "Ce fichier contient un assemblage mais l'exercice demande une pièce unique"
+                        }
+                    else:
+                        cad_result = compare_models(path, reference_path)
     except Exception as e:
         cad_result = {"success": False, "error": str(e)}
 
