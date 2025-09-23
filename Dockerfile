@@ -63,8 +63,13 @@ ENV RAILWAY_STATIC_URL=https://mecaflow-backend-production.up.railway.app
 HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=3 \
     CMD curl -f ${RAILWAY_STATIC_URL:-http://0.0.0.0:8000}/api/health || exit 1
 
-# Create an entrypoint script
-RUN echo '#!/bin/bash\nPORT="${PORT:-8000}"\nexec python /app/docker_run.py' > /app/entrypoint.sh \
+# Create an entrypoint script with explicit port handling
+RUN echo '#!/bin/bash\n\
+# Set default port if not provided\n\
+export PORT=${PORT:-8000}\n\
+echo "Starting server with PORT=$PORT"\n\
+exec python /app/docker_run.py\n\
+' > /app/entrypoint.sh \
     && chmod +x /app/entrypoint.sh
 
 # Use the entrypoint script
