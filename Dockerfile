@@ -58,5 +58,5 @@ ENV PYTHONUNBUFFERED=1
 HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=3 \
     CMD sh -c 'curl -f ${RAILWAY_STATIC_URL:-http://localhost:${PORT:-8000}}/api/health || exit 1'
 
-# Start FastAPI application with proper worker configuration and environment variable expansion
-CMD sh -c 'uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1 --timeout-keep-alive 75'
+# Start FastAPI application with proper worker configuration
+CMD sh -c 'export PORT=${PORT:-8000} && uvicorn main:app --host 0.0.0.0 --port $PORT --workers 1 --timeout-keep-alive 75'
