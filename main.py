@@ -839,7 +839,20 @@ async def submit_exercise(
         qcm_score, correct_count, total_questions = calculate_qcm_score(quiz_answers, qcm)
 
         # CAD score (out of 90)
-        cad_score = cad_result.get("global_score", 0) if isinstance(cad_result, dict) else 0
+        if isinstance(cad_result, dict):
+            # Vérifier si c'est une pièce ou un assemblage
+            is_assembly = ex.get("type") == "assembly"
+            num_components = cad_result.get("num_components", {}).get("submitted", 1)
+            
+            if (is_assembly and num_components > 1) or (not is_assembly and num_components == 1):
+                cad_score = cad_result.get("global_score", 0)
+            else:
+                error_msg = "Assembly attendu mais pièce reçue" if is_assembly else "Pièce attendue mais assembly reçu"
+                cad_score = 0
+                cad_result["error"] = error_msg
+        else:
+            cad_score = 0
+            
         cad_score = min(cad_score, 90)
         total_score = round(cad_score + qcm_score, 2)
         feedback = f"CAD: {cad_score}/90, QCM: {qcm_score}/10 ({correct_count}/{total_questions} correct)"
