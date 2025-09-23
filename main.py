@@ -58,19 +58,14 @@ async def startup_event():
 
 @app.get("/api/health")
 async def health_check():
+    if users_collection is None:
+        return {"status": "starting", "reason": "database initializing"}
     try:
-        if users_collection is None:
-            return {"status": "starting", "reason": "database initializing"}
         await users_collection.find_one({})
         return {"status": "healthy"}
     except Exception as e:
         logging.error(f"Health check failed: {str(e)}")
         return {"status": "unhealthy", "reason": str(e)}
-    except Exception as e:
-        return {"status": "unhealthy", "reason": str(e)}
-    except Exception as e:
-        logging.error(f"Health check failed: {str(e)}")
-        return {"status": "unhealthy"}
 
 # Middleware CORS
 app.add_middleware(
@@ -79,7 +74,7 @@ app.add_middleware(
         "http://localhost:3000",
         "http://127.0.0.1:3000",
         "http://localhost:5173",
-        "https://mecaflow-learn-1.onrender.com/",
+        "https://mecaflow-learn-1.onrender.com",
         "https://mecaflow-backend-production.up.railway.app"
     ],
     allow_credentials=True,
