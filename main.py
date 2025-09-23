@@ -64,6 +64,9 @@ async def health_check():
         await users_collection.find_one({})
         return {"status": "healthy"}
     except Exception as e:
+        logging.error(f"Health check failed: {str(e)}")
+        return {"status": "unhealthy", "reason": str(e)}
+    except Exception as e:
         return {"status": "unhealthy", "reason": str(e)}
     except Exception as e:
         logging.error(f"Health check failed: {str(e)}")
