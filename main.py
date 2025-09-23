@@ -838,11 +838,11 @@ async def submit_exercise(
         qcm = ex.get("qcm", [])
         qcm_score, correct_count, total_questions = calculate_qcm_score(quiz_answers, qcm)
 
-        # DXF score (out of 90)
-        cad_score = cad_result.get("score", 0)
+        # CAD score (out of 90)
+        cad_score = cad_result.get("global_score", 0) if isinstance(cad_result, dict) else 0
         cad_score = min(cad_score, 90)
         total_score = round(cad_score + qcm_score, 2)
-        feedback = f"DXF: {cad_score}/90, QCM: {qcm_score}/10 ({correct_count}/{total_questions} correct)"
+        feedback = f"CAD: {cad_score}/90, QCM: {qcm_score}/10 ({correct_count}/{total_questions} correct)"
 
         sub_dict = {
             "exercise_id": exercise_id,
