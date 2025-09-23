@@ -640,7 +640,17 @@ async def list_courses():
     ]
     cursor = courses_collection.aggregate(pipeline)
     async for course in cursor:
-        courses.append(serialize_doc(course))
+        course_data = serialize_doc(course)
+        # Get exercises for this course
+        exercises = []
+        ex_cursor = exercises_collection.find({
+            "course_id": str(course["_id"]),
+            "is_active": True
+        }).sort([("order", 1), ("createdAt", 1)])
+        async for ex in ex_cursor:
+            exercises.append(serialize_doc(ex))
+        course_data["exercises"] = exercises
+        courses.append(course_data)
     return {"success": True, "courses": courses}
 
 @app.get("/api/courses/{course_id}")
