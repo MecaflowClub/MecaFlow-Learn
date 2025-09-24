@@ -2,6 +2,7 @@ from typing import Optional, Any, Dict, List
 from datetime import datetime, timedelta
 from bson import ObjectId
 import asyncio
+import smtplib
 from fastapi import FastAPI, HTTPException, Depends, Body, File, UploadFile, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer
@@ -441,9 +442,18 @@ async def send_code(payload: SendCodeRequest = Body(...)):
     )
     try:
         send_verification_code(email, code)
+    except ValueError as e:
+        logger.error(f"Erreur de configuration SMTP: {e}")
+        raise HTTPException(status_code=500, detail=f"Email configuration error: {str(e)}")
+    except smtplib.SMTPAuthenticationError as e:
+        logger.error(f"Erreur d'authentification SMTP: {e}")
+        raise HTTPException(status_code=500, detail="SMTP authentication failed. Check email credentials.")
+    except smtplib.SMTPException as e:
+        logger.error(f"Erreur SMTP: {e}")
+        raise HTTPException(status_code=500, detail=f"SMTP error: {str(e)}")
     except Exception as e:
-        logger.error(f"Erreur lors de l'envoi du code de vérification: {e}")
-        raise HTTPException(status_code=500, detail="Failed to send code.")
+        logger.error(f"Erreur inattendue lors de l'envoi du code: {e}")
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
     return {"success": True, "message": "A 6-digit code has been sent to your email."}
 
 @app.post("/api/auth/register")
