@@ -1,10 +1,10 @@
 from typing import Dict, List, Any, Tuple
 from OCC.Core.STEPControl import STEPControl_Reader
-from OCC.Core.BRepGProp import brepgprop_VolumeProperties
+from OCC.Core.BRepGProp import brepgprop_VolumeProperties, brepgprop_SurfaceProperties
 from OCC.Core.GProp import GProp_GProps
-from OCC.Core.TopAbs import TopAbs_FACE, TopAbs_EDGE, TopAbs_VERTEX, TopAbs_SOLID
+from OCC.Core.TopAbs import TopAbs_FACE, TopAbs_EDGE, TopAbs_VERTEX, TopAbs_SOLID, TopAbs_SHELL
 from OCC.Core.TopExp import TopExp_Explorer
-from OCC.Core.TopoDS import topods, TopoDS_Shape
+from OCC.Core.TopoDS import topods, TopoDS_Shape, topods_Shell, topods_Face
 from OCC.Core.BRepBndLib import brepbndlib
 from OCC.Core.Bnd import Bnd_Box
 import numpy as np
@@ -28,6 +28,22 @@ def get_solids_from_shape(shape: TopoDS_Shape):
         solids.append(topods.Solid(exp.Current()))
         exp.Next()
     return solids
+
+def get_shells_from_shape(shape: TopoDS_Shape):
+    shells = []
+    exp = TopExp_Explorer(shape, TopAbs_SHELL)
+    while exp.More():
+        shells.append(topods_Shell(exp.Current()))
+        exp.Next()
+    return shells
+
+def get_faces_from_shape(shape: TopoDS_Shape):
+    faces = []
+    exp = TopExp_Explorer(shape, TopAbs_FACE)
+    while exp.More():
+        faces.append(topods_Face(exp.Current()))
+        exp.Next()
+    return faces
 
 # -------------------------------
 # Property extraction
@@ -85,13 +101,54 @@ def get_solid_properties(solid: TopoDS_Shape):
         "principal_moments": [round(float(abs(v)), 3) for v in eigvals]
     }
 
+def get_shell_properties(shell: TopoDS_Shape):
+    props = GProp_GProps()
+    brepgprop_SurfaceProperties(shell, props)
+    
+    # Bounding box
+    bbox = Bnd_Box()
+    brepbndlib.Add(shell, bbox)
+    xmin, ymin, zmin, xmax, ymax, zmax = bbox.Get()
+    dimensions = (xmax - xmin, ymax - ymin, zmax - zmin)
+    
+    # Topology
+    num_faces = sum(1 for _ in TopExp_Explorer(shell, TopAbs_FACE))
+    num_edges = sum(1 for _ in TopExp_Explorer(shell, TopAbs_EDGE))
+    num_vertices = sum(1 for _ in TopExp_Explorer(shell, TopAbs_VERTEX))
+    
+    return {
+        "surface_area": round(float(props.Mass()), 3),
+        "center_of_mass": (
+            round(float(props.CentreOfMass().X()), 3),
+            round(float(props.CentreOfMass().Y()), 3),
+            round(float(props.CentreOfMass().Z()), 3)
+        ),
+        "dimensions": tuple(round(float(d), 3) for d in dimensions),
+        "topology": {"faces": num_faces, "edges": num_edges, "vertices": num_vertices},
+        "type": "shell" if num_faces > 1 else "surface"
+    }
+
+def get_face_properties(face: TopoDS_Shape):
+    return get_shell_properties(face)  # Même logique peut être utilisée
+
 def get_shape_properties(shape: TopoDS_Shape):
-    """Global properties for single-part models"""
+    """Global properties for models (solids, shells, or surfaces)"""
+    # Essayer d'abord les solides
     solids = get_solids_from_shape(shape)
-    if not solids:
-        raise ValueError("No solids found in shape.")
-    # Merge all solid props (approximate: just take first solid if only one)
-    return get_solid_properties(solids[0])
+    if solids:
+        return get_solid_properties(solids[0])
+    
+    # Ensuite essayer les shells
+    shells = get_shells_from_shape(shape)
+    if shells:
+        return get_shell_properties(shells[0])
+    
+    # Enfin essayer les faces
+    faces = get_faces_from_shape(shape)
+    if faces:
+        return get_face_properties(faces[0])
+        
+    raise ValueError("No valid geometry (solid, shell, or face) found in shape.")
 
 # -------------------------------
 # Comparison
@@ -174,12 +231,21 @@ def compare_models(submitted_path: str, reference_path: str, tol: float = 1e-3) 
         score += dims_score
         total += 1
 
-        # Volume
-        vol_ok = abs(sub_props["volume"] - ref_props["volume"]) <= tol * max(abs(ref_props["volume"]), 1)
-        vol_score = 100 - min(100, 100 * abs(sub_props["volume"] - ref_props["volume"]) /
-                              (abs(ref_props["volume"]) if abs(ref_props["volume"]) > 1e-6 else 1))
-        feedback["volume"] = {"ok": vol_ok, "score": vol_score}
-        score += vol_score
+        # Volume or Surface Area
+        if "volume" in sub_props and "volume" in ref_props:
+            # For solids
+            measure_ok = abs(sub_props["volume"] - ref_props["volume"]) <= tol * max(abs(ref_props["volume"]), 1)
+            measure_score = 100 - min(100, 100 * abs(sub_props["volume"] - ref_props["volume"]) /
+                                  (abs(ref_props["volume"]) if abs(ref_props["volume"]) > 1e-6 else 1))
+            feedback["volume"] = {"ok": measure_ok, "score": measure_score}
+        else:
+            # For shells and surfaces
+            measure_ok = abs(sub_props["surface_area"] - ref_props["surface_area"]) <= tol * max(abs(ref_props["surface_area"]), 1)
+            measure_score = 100 - min(100, 100 * abs(sub_props["surface_area"] - ref_props["surface_area"]) /
+                                  (abs(ref_props["surface_area"]) if abs(ref_props["surface_area"]) > 1e-6 else 1))
+            feedback["surface_area"] = {"ok": measure_ok, "score": measure_score}
+        
+        score += measure_score
         total += 1
 
         # Topology
