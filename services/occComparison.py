@@ -124,6 +124,9 @@ def get_shell_properties(shell: TopoDS_Shape):
     num_edges = count_subshapes(shell, TopAbs_EDGE)
     num_vertices = count_subshapes(shell, TopAbs_VERTEX)
     
+    # Get principal properties
+    principal_props = props.MatrixOfInertia()
+    
     return {
         "surface_area": round(float(props.Mass()), 3),
         "center_of_mass": (
@@ -133,7 +136,12 @@ def get_shell_properties(shell: TopoDS_Shape):
         ),
         "dimensions": tuple(round(float(d), 3) for d in dimensions),
         "topology": {"faces": num_faces, "edges": num_edges, "vertices": num_vertices},
-        "type": "shell" if num_faces > 1 else "surface"
+        "type": "shell" if num_faces > 1 else "surface",
+        "principal_moments": (
+            round(float(principal_props.Value(1, 1)), 3),
+            round(float(principal_props.Value(2, 2)), 3),
+            round(float(principal_props.Value(3, 3)), 3)
+        )
     }
 
 def get_face_properties(face: TopoDS_Shape):
