@@ -10,6 +10,7 @@ SMTP_PORT = int(os.getenv("SMTP_PORT", 587))
 SMTP_USER = os.getenv("SMTP_USER")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
 
+
 # Usage: send_verification_code(email, code)
 def send_verification_code(email: str, code: str):
     subject = "Your Verification Code"
