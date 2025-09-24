@@ -49,6 +49,14 @@ def get_faces_from_shape(shape: TopoDS_Shape):
 # Property extraction
 # -------------------------------
 
+def count_subshapes(shape: TopoDS_Shape, subshape_type):
+    count = 0
+    explorer = TopExp_Explorer(shape, subshape_type)
+    while explorer.More():
+        count += 1
+        explorer.Next()
+    return count
+
 def get_solid_properties(solid: TopoDS_Shape):
     props = GProp_GProps()
     brepgprop_VolumeProperties(solid, props)
@@ -112,9 +120,9 @@ def get_shell_properties(shell: TopoDS_Shape):
     dimensions = (xmax - xmin, ymax - ymin, zmax - zmin)
     
     # Topology
-    num_faces = sum(1 for _ in TopExp_Explorer(shell, TopAbs_FACE))
-    num_edges = sum(1 for _ in TopExp_Explorer(shell, TopAbs_EDGE))
-    num_vertices = sum(1 for _ in TopExp_Explorer(shell, TopAbs_VERTEX))
+    num_faces = count_subshapes(shell, TopAbs_FACE)
+    num_edges = count_subshapes(shell, TopAbs_EDGE)
+    num_vertices = count_subshapes(shell, TopAbs_VERTEX)
     
     return {
         "surface_area": round(float(props.Mass()), 3),
