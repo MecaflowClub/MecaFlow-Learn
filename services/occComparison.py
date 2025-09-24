@@ -4,7 +4,7 @@ from OCC.Core.BRepGProp import brepgprop_VolumeProperties, brepgprop_SurfaceProp
 from OCC.Core.GProp import GProp_GProps
 from OCC.Core.TopAbs import TopAbs_FACE, TopAbs_EDGE, TopAbs_VERTEX, TopAbs_SOLID, TopAbs_SHELL
 from OCC.Core.TopExp import TopExp_Explorer
-from OCC.Core.TopoDS import topods, TopoDS_Shape, topods_Shell, topods_Face
+from OCC.Core.TopoDS import topods, TopoDS_Shape
 from OCC.Core.BRepBndLib import brepbndlib
 from OCC.Core.Bnd import Bnd_Box
 import numpy as np
@@ -33,7 +33,7 @@ def get_shells_from_shape(shape: TopoDS_Shape):
     shells = []
     exp = TopExp_Explorer(shape, TopAbs_SHELL)
     while exp.More():
-        shells.append(topods_Shell(exp.Current()))
+        shells.append(topods.Shell(exp.Current()))
         exp.Next()
     return shells
 
@@ -41,7 +41,7 @@ def get_faces_from_shape(shape: TopoDS_Shape):
     faces = []
     exp = TopExp_Explorer(shape, TopAbs_FACE)
     while exp.More():
-        faces.append(topods_Face(exp.Current()))
+        faces.append(topods.Face(exp.Current()))
         exp.Next()
     return faces
 
