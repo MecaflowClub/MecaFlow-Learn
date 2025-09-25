@@ -22,7 +22,7 @@ def send_verification_code(email: str, code: str):
             html_content=Content(
                 "text/html",
                 f"""
-                <h2>Bienvenue sur MecaFlow !</h2>
+                <h2>Bienvenue sur MecaFlow Learn!</h2>
                 <p>Votre code de vérification est : <strong>{code}</strong></p>
                 <p>Ce code expirera dans 10 minutes.</p>
                 <br>
