@@ -36,6 +36,8 @@ uploads/*
 !uploads/reference-files/**
 !uploads/student-files/
 !uploads/student-files/.gitkeep
+!uploads/drawings/
+!uploads/drawings/**
 temp/
 *.tmp
 
