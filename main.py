@@ -989,16 +989,19 @@ async def submit_exercise(
 
         # CAD score (out of 90)
         if isinstance(cad_result, dict):
-            # Vérifier si c'est une pièce ou un assemblage
-            is_assembly = ex.get("type") == "assembly"
-            num_components = cad_result.get("num_components", {}).get("submitted", 1)
-            
-            if (is_assembly and num_components > 1) or (not is_assembly and num_components == 1):
-                cad_score = cad_result.get("global_score", 0)
-            else:
-                error_msg = "Assembly attendu mais pièce reçue" if is_assembly else "Pièce attendue mais assembly reçu"
-                cad_score = 0
-                cad_result["error"] = error_msg
+            if "score" in cad_result:  # DXF case
+                cad_score = cad_result["score"]
+                # Scale DXF score from 100 to 90
+                cad_score = (cad_score * 90) / 100
+            else:  # STEP/assembly case
+                is_assembly = ex.get("type") == "assembly"
+                num_components = cad_result.get("num_components", {}).get("submitted", 1)
+                if (is_assembly and num_components > 1) or (not is_assembly and num_components == 1):
+                    cad_score = cad_result.get("global_score", 0)
+                else:
+                    error_msg = "Assembly attendu mais pièce reçue" if is_assembly else "Pièce attendue mais assembly reçu"
+                    cad_score = 0
+                    cad_result["error"] = error_msg
         else:
             cad_score = 0
             
