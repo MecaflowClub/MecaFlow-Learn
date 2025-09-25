@@ -5,6 +5,7 @@ import asyncio
 from fastapi import FastAPI, HTTPException, Depends, Body, File, UploadFile, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, EmailStr
 from schemas import (
     UpdateProfileRequest, UpdateProfileResponse, RegisterWithCodeRequest,
@@ -1271,6 +1272,61 @@ async def submit_exercise(
 # =============================================================================
 # MANUAL VALIDATION
 # =============================================================================
+# Endpoint to list pending manual validations
+@app.get("/api/submissions/pending-manual")
+async def list_pending_manual_validations(current_user: dict = Depends(require_teacher_or_admin)):
+    """List all submissions that require manual validation."""
+    pending = []
+    cursor = submissions_collection.find({"status": "pending_manual"})
+    
+    async for sub in cursor:
+        # Get exercise details
+        ex_id = sub.get("exercise_id")
+        ex = await exercises_collection.find_one({"_id": to_objectid(ex_id)})
+        
+        # Get user details
+        user_id = sub.get("user_id")
+        user = await users_collection.find_one({"_id": to_objectid(user_id)})
+        
+        submission_data = serialize_doc(sub)
+        submission_data["exercise_title"] = ex.get("title") if ex else "Unknown"
+        submission_data["user_email"] = user.get("email") if user else "Unknown"
+        if "submitted_at" in sub:
+            submission_data["submitted_at_formatted"] = sub["submitted_at"].strftime("%Y-%m-%d %H:%M:%S")
+        else:
+            submission_data["submitted_at_formatted"] = "No date"
+        
+        pending.append(submission_data)
+    
+    return {"success": True, "submissions": pending}
+
+# Endpoint to download submission files
+@app.get("/api/submissions/{submission_id}/download")
+async def download_submission_file(
+    submission_id: str,
+    current_user: dict = Depends(require_teacher_or_admin)
+):
+    """Download the submitted file for a specific submission."""
+    sub_obj = to_objectid(submission_id)
+    submission = None
+    if sub_obj:
+        submission = await submissions_collection.find_one({"_id": sub_obj})
+    else:
+        submission = await submissions_collection.find_one({"_id": submission_id})
+        
+    if not submission:
+        raise HTTPException(status_code=404, detail="Submission not found")
+        
+    file_path = submission.get("file_path")
+    if not file_path or not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="File not found")
+        
+    return FileResponse(
+        file_path,
+        filename=submission.get("file_name", "submission.sldasm"),
+        media_type="application/octet-stream"
+    )
+
 class ManualValidationRequest(BaseModel):
     score: int
 
