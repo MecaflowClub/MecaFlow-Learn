@@ -64,7 +64,6 @@ L'équipe MecaFlow
             except socket.timeout:
                 print(f"Timeout lors de la tentative {attempt + 1}")
                 last_error = "Connection timed out"
-                continue
                 
             except smtplib.SMTPAuthenticationError as auth_err:
                 print(f"Erreur d'authentification: {auth_err}")
@@ -73,7 +72,6 @@ L'équipe MecaFlow
             except smtplib.SMTPException as smtp_err:
                 print(f"Erreur SMTP: {smtp_err}")
                 last_error = f"SMTP error: {smtp_err}"
-                continue
                 
             finally:
                 try:
@@ -91,18 +89,3 @@ L'équipe MecaFlow
             
     # Si toutes les tentatives ont échoué
     raise ValueError(f"Failed after {MAX_RETRIES} attempts. Last error: {last_error}")
-            return True
-        except smtplib.SMTPAuthenticationError:
-            print("✗ Erreur d'authentification SMTP")
-            raise ValueError("Échec de l'authentification SMTP")
-        except (smtplib.SMTPException, socket.error) as e:
-            print(f"✗ Erreur lors de l'envoi: {str(e)}")
-            raise ValueError(f"Échec de l'envoi: {str(e)}")
-        finally:
-            try:
-                server.quit()
-            except:
-                pass
-    except Exception as e:
-        print(f"✗ Erreur inattendue: {str(e)}")
-        raise ValueError(f"Erreur lors de l'envoi: {str(e)}")
