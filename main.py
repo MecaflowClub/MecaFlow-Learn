@@ -937,17 +937,29 @@ async def submit_exercise(
         if not reference_filename:
             cad_result = {"success": False, "error": "Chemin de référence non défini"}
         else:
-            # Remove any leading slash and normalize path
+            # Normalize path - ensure it's relative to the backend root
             reference_filename = reference_filename.lstrip('/')
+            reference_path = os.path.join(UPLOAD_DIR, "drawings", os.path.basename(reference_filename))
             
-            # Try both with and without backend root to handle both development and production
-            reference_paths = [
-                os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), reference_filename),
-                reference_filename
-            ]
+            logger.info(f"Checking DXF reference file at: {reference_path}")
             
-            reference_path = None
-            for test_path in reference_paths:
+            if not os.path.exists(reference_path):
+                cad_result = {
+                    "success": False, 
+                    "error": "Fichier de référence introuvable",
+                    "details": f"Le fichier {reference_path} n'existe pas"
+                }
+            else:
+                try:
+                    from services.occCompareDXF import compare_dxf_drawings
+                    cad_result = compare_dxf_drawings(path, reference_path)
+                    logger.info(f"DXF comparison result: {cad_result}")
+                except Exception as e:
+                    logger.error(f"Error during DXF comparison: {str(e)}")
+                    cad_result = {
+                        "success": False,
+                        "error": f"Erreur lors de la comparaison DXF: {str(e)}"
+                    }
                 print(f"Looking for reference file at: {test_path}")  # Debug print
                 if os.path.exists(test_path):
                     reference_path = test_path
