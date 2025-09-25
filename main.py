@@ -385,8 +385,30 @@ logger = logging.getLogger("cad-platform")
 # =============================================================================
 # HELPERS
 # =============================================================================
-# (Removed duplicate serialize_doc definition)
+def serialize_doc(doc: Any) -> Any:
+    """Convert ObjectId recursively to str. If doc is None, return None."""
+    if doc is None:
+        return None
 
+    def convert(value):
+        if isinstance(value, ObjectId):
+            return str(value)
+        elif isinstance(value, list):
+            return [convert(v) for v in value]
+        elif isinstance(value, dict):
+            return {k: convert(v) for k, v in value.items()}
+        else:
+            return value
+    return convert(doc)
+
+def to_objectid(val: Optional[str]) -> Optional[ObjectId]:
+    """Try to convert a string to ObjectId, else return None."""
+    if not val:
+        return None
+    try:
+        return ObjectId(val)
+    except Exception:
+        return None
 
 # =============================================================================
 # AUTHENTIFICATION
@@ -938,6 +960,20 @@ async def submit_exercise(
                         "success": False,
                         "error": f"Erreur lors de la comparaison DXF: {str(e)}"
                     }
+            
+            if not reference_path:
+                cad_result = {
+                    "success": False, 
+                    "error": "Fichier de référence introuvable",
+                    "details": f"Chemins essayés: {', '.join(reference_paths)}"
+                }
+            else:
+                try:
+                    from services.occCompareDXF import compare_dxf_drawings
+                except Exception as e:
+                    cad_result = {"success": False, "error": f"Erreur d'importation du module de comparaison DXF: {str(e)}"}
+                else:
+                    cad_result = compare_dxf_drawings(path, reference_path)
 
         # QCM scoring
         quiz_answers = None
@@ -951,34 +987,23 @@ async def submit_exercise(
         qcm = ex.get("qcm", [])
         qcm_score, correct_count, total_questions = calculate_qcm_score(quiz_answers, qcm)
 
-        # Score calculation
-        if level == "advanced" and order == 11:
-            # DXF score calculation (out of 90)
-            dxf_score = 0.0
-            if cad_result.get("success") and "score" in cad_result:
-                # Convert the DXF score from 100 to 90 points
-                dxf_score = round((cad_result["score"] * 90) / 100, 2)
-            logger.info(f"DXF Score Calculation: score={dxf_score}")
-            total_score = round(dxf_score + qcm_score, 2)
-            feedback = f"DXF: {dxf_score}/90, QCM: {qcm_score}/10 ({correct_count}/{total_questions} correct)"
-        else:
-            # CAD score calculation (out of 90)
-            if isinstance(cad_result, dict):
-                is_assembly = ex.get("type") == "assembly"
-                num_components = cad_result.get("num_components", {}).get("submitted", 1)
-                
-                if (is_assembly and num_components > 1) or (not is_assembly and num_components == 1):
-                    cad_score = cad_result.get("global_score", 0)
-                else:
-                    error_msg = "Assembly attendu mais pièce reçue" if is_assembly else "Pièce attendue mais assembly reçu"
-                    cad_score = 0
-                    cad_result["error"] = error_msg
+        # CAD score (out of 90)
+        if isinstance(cad_result, dict):
+            # Vérifier si c'est une pièce ou un assemblage
+            is_assembly = ex.get("type") == "assembly"
+            num_components = cad_result.get("num_components", {}).get("submitted", 1)
+            
+            if (is_assembly and num_components > 1) or (not is_assembly and num_components == 1):
+                cad_score = cad_result.get("global_score", 0)
             else:
+                error_msg = "Assembly attendu mais pièce reçue" if is_assembly else "Pièce attendue mais assembly reçu"
                 cad_score = 0
-                
-            cad_score = min(cad_score, 90)
-            total_score = round(cad_score + qcm_score, 2)
-            feedback = f"CAD: {cad_score}/90, QCM: {qcm_score}/10 ({correct_count}/{total_questions} correct)"
+                cad_result["error"] = error_msg
+        else:
+            cad_score = 0
+            
+        cad_score = min(cad_score, 90)
+        total_score = round(cad_score + qcm_score, 2)
         feedback = f"CAD: {cad_score}/90, QCM: {qcm_score}/10 ({correct_count}/{total_questions} correct)"
 
         sub_dict = {
@@ -1214,10 +1239,7 @@ async def submit_exercise(
         latest_user = await users_collection.find_one(user_filter)
         prev_score = None
         if latest_user:
-            scores = latest_user.get("scores", [])
-            if not isinstance(scores, list):
-                scores = []
-            for s in scores:
+            for s in latest_user.get("scores", []):
                 if s.get("exercise_id") == exercise_id:
                     prev_score = s.get("score", 0)
                     break
@@ -1280,10 +1302,7 @@ async def manual_validate_submission(
     user = await users_collection.find_one(user_filter)
     prev_score = None
     if user:
-        scores = user.get("scores")
-        if not isinstance(scores, list):
-            scores = []
-        for s in scores:
+        for s in user.get("scores", []):
             if s.get("exercise_id") == exercise_id:
                 prev_score = s.get("score", 0)
                 break
