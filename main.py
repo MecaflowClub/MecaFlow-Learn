@@ -1139,12 +1139,14 @@ async def submit_exercise(
     if level == "advanced" and order == 11:
         # Pour DXF, calcule le score basé sur le nombre de formes correspondantes
         if cad_result.get("success"):
-            matched = cad_result.get("matched_shapes", 0)
-            total = cad_result.get("total_reference", 1)  # évite division par zéro
-            score_percentage = (matched / total) * 100 if total > 0 else 0
-            cad_score = min(90, score_percentage * 0.9)
+            matched = float(cad_result.get("matched_shapes", 0))
+            total = float(cad_result.get("total_reference", 1))  # évite division par zéro
+            score_percentage = (matched / total) * 100.0 if total > 0 else 0.0
+            cad_score = round(min(90.0, score_percentage * 0.9), 2)
+            print(f"DXF Score Calculation: matched={matched}, total={total}, percentage={score_percentage}, final={cad_score}")  # Debug
         else:
-            cad_score = 0
+            cad_score = 0.0
+            print(f"DXF Score failed: {cad_result.get('error', 'Unknown error')}")  # Debug
 
         qcm = ex.get("qcm", [])
         quiz_answers = None
@@ -1153,9 +1155,11 @@ async def submit_exercise(
                 quiz_answers = json.loads(quizAnswers)
             except Exception:
                 quiz_answers = None
+        
         qcm_score, correct_count, total_questions = calculate_qcm_score(quiz_answers, qcm)
-        total_score = round(cad_score + qcm_score, 2)
+        total_score = float(cad_score + qcm_score)
         feedback = f"DXF: {cad_score}/90, QCM: {qcm_score}/10 ({correct_count}/{total_questions} correct)"
+        print(f"Final Scores - CAD: {cad_score}, QCM: {qcm_score}, Total: {total_score}")  # Debug
     else:
         # Get CAD score from cad_result (not from feedback)
         cad_score = cad_result.get("global_score", 0) if isinstance(cad_result, dict) else 0
@@ -1186,6 +1190,10 @@ async def submit_exercise(
                 shell_msg = " (Attention: modèle à coques/surfaces, moments principaux non calculés)"
         
         feedback = f"CAD: {cad_score}/90, QCM: {qcm_score}/10 ({correct_count}/{total_questions} correct){shell_msg}"
+
+    # Ensure all scores are properly converted to float
+    total_score = float(total_score)
+    print(f"Final submission score: {total_score}")  # Debug
 
     sub_dict = {
         "exercise_id": exercise_id,
