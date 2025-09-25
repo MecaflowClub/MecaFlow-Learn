@@ -76,5 +76,3 @@ def send_verification_code(email: str, code: str):
     except Exception as e:
         print(f"Unexpected error: {str(e)}")
         raise ValueError(f"Failed to send email: {str(e)}")
-
-send_verification_code("your-test-email@example.com", "123456")
