@@ -441,10 +441,18 @@ async def send_code(payload: SendCodeRequest = Body(...)):
     )
     try:
         send_verification_code(email, code)
+        return {"success": True, "message": "A 6-digit code has been sent to your email."}
     except Exception as e:
         logger.error(f"Erreur lors de l'envoi du code de vérification: {e}")
-        raise HTTPException(status_code=500, detail="Failed to send code.")
-    return {"success": True, "message": "A 6-digit code has been sent to your email."}
+        # Retourner plus de détails sur l'erreur pour le débogage
+        error_message = str(e) if not isinstance(e, ValueError) else e.args[0]
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "message": "Failed to send code",
+                "error": error_message
+            }
+        )
 
 @app.post("/api/auth/register")
 async def register(user: RegisterWithCodeRequest = Body(...)):
