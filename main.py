@@ -1307,6 +1307,9 @@ async def download_submission_file(
     current_user: dict = Depends(require_teacher_or_admin)
 ):
     """Download the submitted file for a specific submission."""
+    logger.info(f"Download request for submission: {submission_id}")
+    
+    # Find the submission
     sub_obj = to_objectid(submission_id)
     submission = None
     if sub_obj:
@@ -1315,17 +1318,42 @@ async def download_submission_file(
         submission = await submissions_collection.find_one({"_id": submission_id})
         
     if not submission:
+        logger.error(f"Submission not found: {submission_id}")
         raise HTTPException(status_code=404, detail="Submission not found")
         
     file_path = submission.get("file_path")
-    if not file_path or not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail="File not found")
-        
-    return FileResponse(
-        file_path,
-        filename=submission.get("file_name", "submission.sldasm"),
-        media_type="application/octet-stream"
-    )
+    if not file_path:
+        logger.error(f"File path not found in submission: {submission_id}")
+        raise HTTPException(status_code=404, detail="File path not found in submission")
+
+    # Get the absolute path, considering both relative and absolute paths
+    if not os.path.isabs(file_path):
+        # If it's a full path starting with 'uploads/', remove that part
+        if file_path.startswith('uploads/'):
+            file_path = file_path[8:]  # Remove 'uploads/' prefix
+        # Create absolute path using UPLOAD_DIR
+        file_path = os.path.join(os.path.dirname(__file__), UPLOAD_DIR, file_path)
+    
+    # Log the file path for debugging
+    logger.info(f"Attempting to serve file: {file_path}")
+    logger.info(f"File exists: {os.path.exists(file_path)}")
+    
+    if not os.path.exists(file_path):
+        logger.error(f"File not found at path: {file_path}")
+        raise HTTPException(
+            status_code=404, 
+            detail=f"File not found at path: {file_path}"
+        )
+
+    try:
+        return FileResponse(
+            path=file_path,
+            filename=submission.get("file_name", "submission.sldasm"),
+            media_type="application/octet-stream"
+        )
+    except Exception as e:
+        logger.error(f"Error serving file: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error serving file: {str(e)}")
 
 class ManualValidationRequest(BaseModel):
     score: int
