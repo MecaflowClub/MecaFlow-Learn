@@ -937,16 +937,27 @@ async def submit_exercise(
         if not reference_filename:
             cad_result = {"success": False, "error": "Chemin de référence non défini"}
         else:
-            # Ensure we have an absolute path from the backend root
-            backend_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            reference_path = os.path.join(backend_root, reference_filename)
-            print(f"Looking for reference file at: {reference_path}")  # Debug print
+            # Remove any leading slash and normalize path
+            reference_filename = reference_filename.lstrip('/')
             
-            if not os.path.exists(reference_path):
+            # Try both with and without backend root to handle both development and production
+            reference_paths = [
+                os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), reference_filename),
+                reference_filename
+            ]
+            
+            reference_path = None
+            for test_path in reference_paths:
+                print(f"Looking for reference file at: {test_path}")  # Debug print
+                if os.path.exists(test_path):
+                    reference_path = test_path
+                    break
+            
+            if not reference_path:
                 cad_result = {
                     "success": False, 
                     "error": "Fichier de référence introuvable",
-                    "details": f"Chemin attendu: {reference_path}"
+                    "details": f"Chemins essayés: {', '.join(reference_paths)}"
                 }
             else:
                 try:
