@@ -24,6 +24,7 @@ def send_verification_code(email: str, code: str):
         
         # Validate SMTP settings
         if not SMTP_USER or not SMTP_PASSWORD:
+            print("ERROR: SMTP credentials missing")
             raise ValueError("SMTP credentials not configured")
             
         # Prepare email
@@ -49,30 +50,39 @@ def send_verification_code(email: str, code: str):
         for attempt in range(3):  # Try 3 times
             try:
                 with smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=30) as server:
-                    server.set_debuglevel(1)  # Enable debug output
+                    server.set_debuglevel(2)  # Increase debug level
                     print("Starting TLS")
                     server.starttls()
                     
-                    print("Attempting login")
+                    print(f"Attempting login with user: {SMTP_USER}")
                     server.login(SMTP_USER, SMTP_PASSWORD)
                     
-                    print("Sending email")
-                    server.sendmail(SMTP_USER, [email], msg.as_string())
-                    print(f"Verification code successfully sent to {email}")
+                    print("Sending email...")
+                    result = server.sendmail(FROM_EMAIL, [email], msg.as_string())
+                    if result:
+                        print(f"Send result: {result}")
+                    print(f"✓ Verification code successfully sent to {email}")
                     return True
             except (smtplib.SMTPConnectError, OSError) as e:
-                if attempt < 2:  # If not the last attempt
-                    print(f"Connection failed, retrying... (attempt {attempt + 1})")
-                    time.sleep(2)  # Wait 2 seconds before retry
+                print(f"Connection error on attempt {attempt + 1}: {str(e)}")
+                if attempt < 2:
+                    print(f"Retrying in 2 seconds... ({attempt + 1}/3)")
+                    time.sleep(2)
                 else:
-                    raise  # Re-raise the exception if all attempts failed
+                    print("All connection attempts failed")
+                    raise
             
-    except smtplib.SMTPAuthenticationError:
-        print("SMTP Authentication failed - check username and password")
-        raise ValueError("Email authentication failed")
-    except smtplib.SMTPException as e:
-        print(f"SMTP error occurred: {str(e)}")
-        raise ValueError(f"Failed to send email: {str(e)}")
+    except smtplib.SMTPAuthenticationError as auth_error:
+        error_msg = f"SMTP Authentication failed: {str(auth_error)}"
+        print(error_msg)
+        raise ValueError(error_msg)
+    except smtplib.SMTPException as smtp_error:
+        error_msg = f"SMTP error occurred: {str(smtp_error)}"
+        print(error_msg)
+        raise ValueError(error_msg)
     except Exception as e:
-        print(f"Unexpected error: {str(e)}")
-        raise ValueError(f"Failed to send email: {str(e)}")
+        error_msg = f"Unexpected error: {str(e)}"
+        print(error_msg)
+        raise ValueError(error_msg)
+
+    return False
