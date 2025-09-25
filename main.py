@@ -1137,29 +1137,34 @@ async def submit_exercise(
 
     # Only use DXF feedback/scoring for advanced exercise 11
     if level == "advanced" and order == 11:
-        # Pour DXF, calcule le score basé sur le nombre de formes correspondantes
+        # CAD score calculation for DXF
         if cad_result.get("success"):
             matched = float(cad_result.get("matched_shapes", 0))
-            total = float(cad_result.get("total_reference", 1))  # évite division par zéro
-            score_percentage = (matched / total) * 100.0 if total > 0 else 0.0
-            cad_score = round(min(90.0, score_percentage * 0.9), 2)
-            print(f"DXF Score Calculation: matched={matched}, total={total}, percentage={score_percentage}, final={cad_score}")  # Debug
+            total = float(cad_result.get("total_reference", 1))
+            match_ratio = matched / total if total > 0 else 0
+            cad_score = round(90.0 * match_ratio, 2)  # Scale to 90 points max
+            logger.info(f"DXF Score: matched={matched}, total={total}, ratio={match_ratio}, final_score={cad_score}")
         else:
             cad_score = 0.0
-            print(f"DXF Score failed: {cad_result.get('error', 'Unknown error')}")  # Debug
+            logger.warning(f"DXF comparison failed: {cad_result.get('error', 'Unknown error')}")
 
+        # QCM scoring
         qcm = ex.get("qcm", [])
         quiz_answers = None
         if quizAnswers:
             try:
                 quiz_answers = json.loads(quizAnswers)
+                logger.info(f"Received quizAnswers: {quizAnswers}, parsed: {quiz_answers}")
             except Exception:
                 quiz_answers = None
-        
+                logger.warning(f"Failed to parse quizAnswers: {quizAnswers}")
+
         qcm_score, correct_count, total_questions = calculate_qcm_score(quiz_answers, qcm)
-        total_score = float(cad_score + qcm_score)
-        feedback = f"DXF: {cad_score}/90, QCM: {qcm_score}/10 ({correct_count}/{total_questions} correct)"
-        print(f"Final Scores - CAD: {cad_score}, QCM: {qcm_score}, Total: {total_score}")  # Debug
+        
+        # Calculate total score
+        total_score = round(cad_score + qcm_score, 2)
+        feedback = f"CAD: {cad_score}/90, QCM: {qcm_score}/10 ({correct_count}/{total_questions} correct)"
+        logger.info(f"Final Scores - CAD: {cad_score}, QCM: {qcm_score}, Total: {total_score}")
     else:
         # Get CAD score from cad_result (not from feedback)
         cad_score = cad_result.get("global_score", 0) if isinstance(cad_result, dict) else 0
