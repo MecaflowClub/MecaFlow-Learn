@@ -1137,15 +1137,19 @@ async def submit_exercise(
 
     # Only use DXF feedback/scoring for advanced exercise 11
     if level == "advanced" and order == 11:
-        # CAD score calculation for DXF
-        if cad_result.get("success"):
-            matched = float(cad_result.get("matched_shapes", 0))
-            total = float(cad_result.get("total_reference", 1))
-            match_ratio = matched / total if total > 0 else 0
-            cad_score = round(90.0 * match_ratio, 2)  # Scale to 90 points max
-            logger.info(f"DXF Score: matched={matched}, total={total}, ratio={match_ratio}, final_score={cad_score}")
+        # DXF score calculation
+        dxf_score = 0.0
+        if cad_result.get("success") and cad_result.get("matched_shapes") is not None:
+            matched = cad_result["matched_shapes"]
+            total = cad_result["total_reference"]
+            # Si toutes les formes correspondent, donnez le score maximum
+            if matched == total:
+                dxf_score = 90.0
+            else:
+                # Sinon, calculez le score proportionnellement
+                dxf_score = round(90.0 * (matched / total), 2) if total > 0 else 0.0
+            logger.info(f"DXF Score Calculation: matched={matched}, total={total}, score={dxf_score}")
         else:
-            cad_score = 0.0
             logger.warning(f"DXF comparison failed: {cad_result.get('error', 'Unknown error')}")
 
         # QCM scoring
@@ -1162,9 +1166,9 @@ async def submit_exercise(
         qcm_score, correct_count, total_questions = calculate_qcm_score(quiz_answers, qcm)
         
         # Calculate total score
-        total_score = round(cad_score + qcm_score, 2)
-        feedback = f"CAD: {cad_score}/90, QCM: {qcm_score}/10 ({correct_count}/{total_questions} correct)"
-        logger.info(f"Final Scores - CAD: {cad_score}, QCM: {qcm_score}, Total: {total_score}")
+        total_score = round(dxf_score + qcm_score, 2)
+        feedback = f"DXF: {dxf_score}/90, QCM: {qcm_score}/10 ({correct_count}/{total_questions} correct)"
+        logger.info(f"Final Scores - DXF: {dxf_score}, QCM: {qcm_score}, Total: {total_score}")
     else:
         # Get CAD score from cad_result (not from feedback)
         cad_score = cad_result.get("global_score", 0) if isinstance(cad_result, dict) else 0
