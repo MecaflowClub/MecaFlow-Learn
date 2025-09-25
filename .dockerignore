@@ -12,3 +12,4 @@ venv311/
 .gitignore
 uploads/*
 !uploads/reference-files/
+!uploads/drawings/
