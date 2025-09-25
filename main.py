@@ -942,11 +942,11 @@ async def submit_exercise(
                 cad_result = {"success": False, "error": "Fichier de référence introuvable"}
             else:
                 try:
-                    from services.dxfComparison import compare_dxf
-                except Exception:
-                    cad_result = {"success": False, "error": "Erreur d'importation du module de comparaison DXF"}
+                    from services.occCompareDXF import compare_dxf_drawings
+                except Exception as e:
+                    cad_result = {"success": False, "error": f"Erreur d'importation du module de comparaison DXF: {str(e)}"}
                 else:
-                    cad_result = compare_dxf(path, reference_path)
+                    cad_result = compare_dxf_drawings(path, reference_path)
 
         # QCM scoring
         quiz_answers = None

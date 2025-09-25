@@ -1,4 +1,6 @@
+import os
 import ezdxf
+from ezdxf.lldxf.const import DXFError
 from OCC.Core.BRepBuilderAPI import (
     BRepBuilderAPI_MakeEdge, BRepBuilderAPI_MakeWire,
     BRepBuilderAPI_MakeFace
@@ -16,7 +18,14 @@ import json
 
 def analyze_dxf(path):
     """Analyze DXF entities and return counts by type."""
-    doc = ezdxf.readfile(path)
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"Le fichier DXF n'existe pas: {path}")
+        
+    try:
+        doc = ezdxf.readfile(path)
+    except ezdxf.DXFError as e:
+        raise ValueError(f"Erreur lors de la lecture du fichier DXF: {e}")
+        
     msp = doc.modelspace()
 
     counts = {
@@ -183,9 +192,39 @@ def compare_geometry(shape1, shape2, tolerance=1e-3):
 def compare_dxf_drawings(submitted_path, reference_path, tol=1e-3):
     """Compare two DXF files using OpenCascade and ezdxf."""
     try:
-        # Analyze DXF files
-        ref_counts, ref_geom = analyze_dxf(reference_path)
-        sub_counts, sub_geom = analyze_dxf(submitted_path)
+        # First check if both files exist
+        if not os.path.exists(reference_path):
+            return {
+                "success": False,
+                "error": "Fichier de référence introuvable",
+                "message": f"Le fichier de référence n'existe pas: {reference_path}"
+            }
+            
+        if not os.path.exists(submitted_path):
+            return {
+                "success": False,
+                "error": "Fichier soumis introuvable",
+                "message": f"Le fichier soumis n'existe pas: {submitted_path}"
+            }
+
+        # Try to analyze both files
+        try:
+            ref_counts, ref_geom = analyze_dxf(reference_path)
+        except Exception as e:
+            return {
+                "success": False,
+                "error": "Erreur de lecture du fichier de référence",
+                "message": str(e)
+            }
+
+        try:
+            sub_counts, sub_geom = analyze_dxf(submitted_path)
+        except Exception as e:
+            return {
+                "success": False,
+                "error": "Erreur de lecture du fichier soumis",
+                "message": str(e)
+            }
         
         # Create OpenCascade geometry
         ref_shapes = create_occ_geometry(ref_geom)
