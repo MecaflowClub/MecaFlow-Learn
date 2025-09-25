@@ -1,11 +1,11 @@
-import os
 from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import Mail, Email, To, Content
+import os
 from dotenv import load_dotenv
 
 load_dotenv()
 
-SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")  # Utilise la même variable que précédemment
+SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")
 FROM_EMAIL = os.getenv("FROM_EMAIL", "mecaflowlearn@gmail.com")
 FROM_NAME = os.getenv("FROM_NAME", "MecaFlow")
 
@@ -14,7 +14,7 @@ def send_verification_code(email: str, code: str):
         raise ValueError("SendGrid API key not configured")
 
     try:
-        # Création du message
+        # Create message
         message = Mail(
             from_email=Email(FROM_EMAIL, FROM_NAME),
             to_emails=To(email),
@@ -31,21 +31,19 @@ def send_verification_code(email: str, code: str):
             )
         )
 
-        # Envoi via l'API SendGrid
+        # Send via SendGrid API
         sg = SendGridAPIClient(SENDGRID_API_KEY)
         response = sg.send(message)
         
-        print(f"Email envoyé avec succès. Status code: {response.status_code}")
+        if response.status_code not in [200, 202]:
+            raise ValueError(f"SendGrid API error: {response.status_code}")
+            
+        print(f"Email sent successfully. Status code: {response.status_code}")
         return True
 
     except Exception as e:
         error_msg = str(e)
-        print(f"Erreur lors de l'envoi de l'email: {error_msg}")
-        if "401" in error_msg:
-            raise ValueError("Invalid API Key configuration")
-        elif "403" in error_msg:
-            raise ValueError("SendGrid API Key does not have permission to send emails")
-        elif "from address" in error_msg.lower():
-            raise ValueError("Sender email address not verified in SendGrid")
-        else:
-            raise ValueError(f"Failed to send email: {error_msg}")
+        if "does not have permission" in error_msg:
+            print("API Key permission error. Please check SendGrid API key permissions.")
+        print(f"Error sending email: {error_msg}")
+        raise ValueError(f"Failed to send email: {error_msg}")
