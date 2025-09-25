@@ -1137,8 +1137,12 @@ async def submit_exercise(
 
     # Only use DXF feedback/scoring for advanced exercise 11
     if level == "advanced" and order == 11:
-        cad_score = cad_result.get("score", 0)
-        cad_score = min(cad_score, 90)
+        # Pour DXF, utilise le score de comparaison multiplié par 0.9 (90% de la note totale)
+        if cad_result.get("success") and "score" in cad_result:
+            cad_score = min(90, cad_result["score"] * 0.9)
+        else:
+            cad_score = 0
+
         qcm = ex.get("qcm", [])
         quiz_answers = None
         if quizAnswers:
