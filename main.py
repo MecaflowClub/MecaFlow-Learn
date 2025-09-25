@@ -960,24 +960,6 @@ async def submit_exercise(
                         "success": False,
                         "error": f"Erreur lors de la comparaison DXF: {str(e)}"
                     }
-                print(f"Looking for reference file at: {test_path}")  # Debug print
-                if os.path.exists(test_path):
-                    reference_path = test_path
-                    break
-            
-            if not reference_path:
-                cad_result = {
-                    "success": False, 
-                    "error": "Fichier de référence introuvable",
-                    "details": f"Chemins essayés: {', '.join(reference_paths)}"
-                }
-            else:
-                try:
-                    from services.occCompareDXF import compare_dxf_drawings
-                except Exception as e:
-                    cad_result = {"success": False, "error": f"Erreur d'importation du module de comparaison DXF: {str(e)}"}
-                else:
-                    cad_result = compare_dxf_drawings(path, reference_path)
 
         # QCM scoring
         quiz_answers = None
