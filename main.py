@@ -1137,9 +1137,12 @@ async def submit_exercise(
 
     # Only use DXF feedback/scoring for advanced exercise 11
     if level == "advanced" and order == 11:
-        # Pour DXF, utilise le score de comparaison multiplié par 0.9 (90% de la note totale)
-        if cad_result.get("success") and "score" in cad_result:
-            cad_score = min(90, cad_result["score"] * 0.9)
+        # Pour DXF, calcule le score basé sur le nombre de formes correspondantes
+        if cad_result.get("success"):
+            matched = cad_result.get("matched_shapes", 0)
+            total = cad_result.get("total_reference", 1)  # évite division par zéro
+            score_percentage = (matched / total) * 100 if total > 0 else 0
+            cad_score = min(90, score_percentage * 0.9)
         else:
             cad_score = 0
 
