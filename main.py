@@ -15,7 +15,7 @@ from schemas import (
 from auth import (
     authenticate_user, create_access_token, get_current_user, require_teacher_or_admin,
     require_admin, get_password_hash, create_refresh_token, verify_refresh_token,
-    verify_password, pwd_context
+    verify_password
 )
 from database import init_db, users_collection, exercises_collection, submissions_collection, courses_collection
 from services.occComparison import compare_models
@@ -247,7 +247,7 @@ async def test_password_hash(password: str = Body(...)):
     logger.info(f"Second hash: {second_hash}")
     logger.info(f"First hash verification: {verify_result}")
     logger.info(f"Second hash verification: {second_verify}")
-    logger.info(f"Cross verification (first hash with second verify): {pwd_context.verify(password, hashed)}")
+    logger.info(f"Cross verification (first hash with second verify): {verify_password(password, hashed)}")
     
     return {
         "original": password,
@@ -295,23 +295,23 @@ async def update_profile(payload: UpdateProfileRequest = Body(...), current_user
         logger.info(f"Password update requested - Current hash in DB: {stored_password}")
         
         # verify current password
-        if not pwd_context.verify(payload.current_password, stored_password):
+        if not verify_password(payload.current_password, stored_password):
             logger.warning("Password update failed - Current password verification failed")
             raise HTTPException(status_code=400, detail="Current password is incorrect")
         logger.info("Current password verified successfully")
         
         # ensure new != current
-        if pwd_context.verify(payload.new_password, stored_password):
+        if verify_password(payload.new_password, stored_password):
             logger.warning("Password update failed - New password same as current")
             raise HTTPException(status_code=400, detail="New password must be different from current password")
             
         # hash and set new password
-        new_hashed = pwd_context.hash(payload.new_password)
+        new_hashed = get_password_hash(payload.new_password)
         update_fields["password"] = new_hashed
         logger.info(f"Generated new password hash: {new_hashed}")
         
         # Verify the new hash works before saving
-        verify_test = pwd_context.verify(payload.new_password, new_hashed)
+        verify_test = verify_password(payload.new_password, new_hashed)
         if not verify_test:
             logger.error("Password update failed - New hash verification failed")
             raise HTTPException(status_code=500, detail="Generated password hash verification failed")
@@ -349,7 +349,7 @@ async def update_profile(payload: UpdateProfileRequest = Body(...), current_user
             logger.error(f"Found in DB: {new_stored_hash}")
             raise HTTPException(status_code=500, detail="Password update verification failed")
         
-        verify_final = pwd_context.verify(payload.new_password, new_stored_hash)
+        verify_final = verify_password(payload.new_password, new_stored_hash)
         if not verify_final:
             logger.error("Password update verification failed - Cannot verify with new password")
             raise HTTPException(status_code=500, detail="Password update verification failed")
@@ -534,22 +534,13 @@ async def login(user: UserLogin = Body(...)):
                 detail="Email ou mot de passe incorrect"
             )
             
-        # Truncate password if longer than 72 bytes (bcrypt limitation)
-        truncated_password = user.password.encode('utf-8')[:72].decode('utf-8')
-            
-        # Verify password
-        try:
-            if not verify_password(truncated_password, db_user.get("password", "")):
-                logger.warning(f"Login failed: Invalid password for user {user.email}")
-                raise HTTPException(
-                    status_code=401,
-                    detail="Email ou mot de passe incorrect"
-                )
-        except ValueError as e:
-            logger.error(f"Password verification error: {str(e)}")
+        # Verify password using direct bcrypt comparison
+        stored_password = db_user.get("password", "")
+        if not stored_password or not verify_password(user.password[:72], stored_password):
+            logger.warning(f"Login failed: Invalid password for user {user.email}")
             raise HTTPException(
-                status_code=400,
-                detail="Format de mot de passe invalide"
+                status_code=401,
+                detail="Email ou mot de passe incorrect"
             )
             
         # Check if user is active
