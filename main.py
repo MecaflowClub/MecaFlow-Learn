@@ -522,32 +522,63 @@ async def verify_email_code(payload: EmailCodeVerifyRequest = Body(...)):
 
 @app.post("/api/auth/login")
 async def login(user: UserLogin = Body(...)):
-    logger.info(f"Tentative de connexion: {user.email}")
-    print(f"Debug - Login attempt:")
-    print(f"- Email: {user.email}")
-    
-    # Get the user first to do some debug checks
-    db_user_check = await users_collection.find_one({"email": user.email})
-    if db_user_check:
-        stored_password = db_user_check.get("password", "")
-        print(f"- Found user with stored password hash: {stored_password}")
-        # Try direct password verification
-        direct_verify = pwd_context.verify(user.password, stored_password)
-        print(f"- Direct password verification result: {direct_verify}")
-    else:
-        print("- No user found with this email")
-    
-    db_user = await authenticate_user(user.email, user.password)
-    if not db_user:
-        raise HTTPException(status_code=401, detail="Email ou mot de passe incorrect")
-
-    token = create_access_token(data={"sub": db_user["email"]})
-    return {
-        "success": True,
-        "access_token": token,
-        "token_type": "bearer",
-        "user": serialize_doc(db_user)
-    }
+    try:
+        logger.info(f"Login attempt for email: {user.email}")
+        
+        # First check if user exists
+        db_user = await users_collection.find_one({"email": user.email})
+        if not db_user:
+            logger.warning(f"Login failed: No user found with email {user.email}")
+            raise HTTPException(
+                status_code=401,
+                detail="Email ou mot de passe incorrect"
+            )
+            
+        # Truncate password if longer than 72 bytes (bcrypt limitation)
+        truncated_password = user.password.encode('utf-8')[:72].decode('utf-8')
+            
+        # Verify password
+        try:
+            if not verify_password(truncated_password, db_user.get("password", "")):
+                logger.warning(f"Login failed: Invalid password for user {user.email}")
+                raise HTTPException(
+                    status_code=401,
+                    detail="Email ou mot de passe incorrect"
+                )
+        except ValueError as e:
+            logger.error(f"Password verification error: {str(e)}")
+            raise HTTPException(
+                status_code=400,
+                detail="Format de mot de passe invalide"
+            )
+            
+        # Check if user is active
+        if not db_user.get("is_active", True):
+            logger.warning(f"Login failed: User {user.email} is not active")
+            raise HTTPException(
+                status_code=401,
+                detail="Compte désactivé"
+            )
+            
+        # Create access token
+        token = create_access_token(data={"sub": db_user["email"]})
+        logger.info(f"Login successful for user {user.email}")
+        
+        return {
+            "success": True,
+            "access_token": token,
+            "token_type": "bearer",
+            "user": serialize_doc(db_user)
+        }
+        
+    except Exception as e:
+        logger.error(f"Login error for {user.email}: {str(e)}")
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(
+            status_code=500,
+            detail="Une erreur est survenue lors de la connexion"
+        )
 
 @app.post("/api/auth/refresh-token", response_model=Token)
 async def refresh_token(payload: TokenRefreshRequest):
