@@ -1447,8 +1447,8 @@ async def manual_validate_submission(
     await users_collection.update_one(user_filter, {"$pull": {"scores": {"exercise_id": exercise_id}}})
     await users_collection.update_one(user_filter, {"$push": {"scores": {"exercise_id": exercise_id, "score": best_score}}})
 
-    # Only mark as completed and update progress if best score >= 80
-    if best_score >= 80:
+    # Only mark as completed and update progress if best score >= 90 (matching other exercises)
+    if best_score >= 90:
         await users_collection.update_one(user_filter, {"$addToSet": {"completedExercises": exercise_id}})
         ex_obj = to_objectid(exercise_id)
         ex = await exercises_collection.find_one({"_id": ex_obj}) if ex_obj else await exercises_collection.find_one({"_id": exercise_id})

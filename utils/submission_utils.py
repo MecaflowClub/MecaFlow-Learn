@@ -21,17 +21,30 @@ async def send_submission_email(file_content, filename, student_email, exercise_
         exercise_type: Type of exercise (to indicate required file type)
     """
     try:
+        # Get and verify environment variables
         sender_email = os.getenv("FROM_EMAIL")
         sender_name = os.getenv("FROM_NAME", "Mecaflow Learn")
         receiver_email = os.getenv("TO_EMAIL", "bouiraislam5@gmail.com")
         api_key = os.getenv("SENDGRID_API_KEY")
 
+        # Log configuration status
+        logger.info(f"Email Configuration:")
+        logger.info(f"- Sender: {sender_email} ({sender_name})")
+        logger.info(f"- Receiver: {receiver_email}")
+        logger.info(f"- API Key present: {'Yes' if api_key else 'No'}")
+
         if not all([sender_email, api_key, receiver_email]):
-            logger.error("Missing required SendGrid configuration")
+            missing = []
+            if not sender_email: missing.append("FROM_EMAIL")
+            if not api_key: missing.append("SENDGRID_API_KEY")
+            if not receiver_email: missing.append("TO_EMAIL")
+            logger.error(f"Missing required SendGrid configuration: {', '.join(missing)}")
             return False
 
         subject = f"Manual Validation Submission - {exercise_title}"
 
+        # Default to part if exercise_type is None
+        exercise_type = exercise_type or "part"
         file_type = ".sldprt" if "part" in exercise_type.lower() else ".sldasm"
         
         body = f"""
@@ -77,6 +90,16 @@ async def send_submission_email(file_content, filename, student_email, exercise_
         
         return success
 
+    except SendGridAPIClient.AuthenticationError as e:
+        logger.error(f"SendGrid authentication failed: {str(e)}")
+        logger.error("Please verify your SENDGRID_API_KEY environment variable")
+        return False
+    except SendGridAPIClient.APIError as e:
+        logger.error(f"SendGrid API error: {str(e)}")
+        logger.error(f"Response status code: {getattr(e, 'status_code', 'N/A')}")
+        logger.error(f"Response body: {getattr(e, 'body', 'N/A')}")
+        return False
     except Exception as e:
-        logger.error(f"Error sending submission email: {str(e)}")
+        logger.error(f"Unexpected error sending submission email: {str(e)}")
+        logger.exception("Full error traceback:")
         return False
