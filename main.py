@@ -76,18 +76,24 @@ async def startup_event():
     
     # Create upload directories if they don't exist
     for dir_path in UPLOAD_DIRS:
-        os.makedirs(dir_path, exist_ok=True)
-        logging.info(f"Ensured directory exists: {dir_path}")
-    
-    logging.info("Startup completed successfully")
-            except Exception as e:
-                if attempt == 2:  # Last attempt
-                    raise
-                logging.warning(f"Database initialization attempt {attempt + 1} failed, retrying...")
-                await asyncio.sleep(5)
+    os.makedirs(dir_path, exist_ok=True)
+    logging.info(f"Ensured directory exists: {dir_path}")
+
+logging.info("Startup: Creating upload directories completed successfully.")
+
+# Example: retry database initialization up to 3 times
+for attempt in range(3):
+    try:
+        await initialize_database()
+        logging.info("Database initialized successfully.")
+        break
     except Exception as e:
-        logging.error(f"Failed to initialize database: {str(e)}")
-        raise RuntimeError(f"Could not initialize database: {str(e)}")
+        if attempt == 2:  # Last attempt
+            logging.error(f"Failed to initialize database after {attempt + 1} attempts: {str(e)}")
+            raise RuntimeError(f"Could not initialize database: {str(e)}")
+        else:
+            logging.warning(f"Database initialization attempt {attempt + 1} failed: {str(e)}. Retrying...")
+            await asyncio.sleep(5)
 
 @app.get("/api/health")
 async def health_check():
