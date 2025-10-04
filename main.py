@@ -927,7 +927,8 @@ async def submit_exercise(
     user_feedback: Optional[str] = Form(None),
     current_user: dict = Depends(get_current_user)
 ):
-    logger.info(f"Soumission exercice {exercise_id} par utilisateur {current_user.get('email')}")
+    logger.info(f"Exercise submission - ID: {exercise_id}, User: {current_user.get('email')}")
+    logger.info(f"Exercise details - Course level: {level}, Exercise order: {order}")
     ex_obj = to_objectid(exercise_id)
     if not ex_obj:
         ex = await exercises_collection.find_one({"_id": exercise_id})
@@ -969,7 +970,7 @@ async def submit_exercise(
     )
     
     if special_manual:
-        logger.info(f"Processing manual validation exercise - Level: {level}, Order: {order}")
+        logger.info(f"Manual validation exercise detected - Level: {level}, Order: {order}, Required file: {'.sldprt' if exercise_type == 'part' else '.sldasm'}")
         
         # Determine required file type based on exercise
         if level == "advanced" and order in [6, 7]:
@@ -997,7 +998,7 @@ async def submit_exercise(
         )
 
         if not email_sent:
-            logger.error(f"Failed to send submission email for {current_user.get('email')}")
+            logger.error(f"Failed to send submission email - User: {current_user.get('email')}, Exercise: {ex.get('title', 'Unknown')}, Type: {exercise_type}")
             raise HTTPException(
                 status_code=500,
                 detail="Échec de l'envoi de l'email de soumission. Veuillez réessayer."
@@ -1448,7 +1449,10 @@ async def manual_validate_submission(
     await users_collection.update_one(user_filter, {"$push": {"scores": {"exercise_id": exercise_id, "score": best_score}}})
 
     # Only mark as completed and update progress if best score >= 90 (matching other exercises)
+    logger.info(f"Manual validation score check - Score: {best_score}, Required: 90")
     if best_score >= 90:
+        user_doc = await users_collection.find_one(user_filter)
+        logger.info(f"Manual validation passed - User: {user_doc.get('email') if user_doc else 'Unknown'}, Exercise: {exercise_id}, Score: {best_score}")
         await users_collection.update_one(user_filter, {"$addToSet": {"completedExercises": exercise_id}})
         ex_obj = to_objectid(exercise_id)
         ex = await exercises_collection.find_one({"_id": ex_obj}) if ex_obj else await exercises_collection.find_one({"_id": exercise_id})
