@@ -57,43 +57,60 @@ def verify_email_config():
 
 @app.on_event("startup")
 async def startup_event():
-    """Initialize database connection and create necessary directories on startup"""
+  import asyncio
+import os
+import logging
+
+# Example constants
+UPLOAD_DIRS = ["uploads/manual_validation", "uploads/results"]
+
+async def startup():
+    """Initialize database connection and create necessary directories on startup."""
+    
     # Verify email configuration
     if not verify_email_config():
-        logger.warning("Email configuration incomplete - manual validation emails may not work")
+        logging.warning("Email configuration incomplete - manual validation emails may not work")
     
-    # Initialize database with retries
+    # --- Initialize database with retries ---
     for attempt in range(3):
         try:
             await init_db()
-            logging.info("Database initialized successfully")
+            logging.info("Database initialized successfully.")
             break
         except Exception as e:
             if attempt == 2:  # Last attempt
-                logging.error(f"Failed to initialize database: {str(e)}")
-                raise e
-            await asyncio.sleep(1)
+                logging.error(f"Failed to initialize database after {attempt + 1} attempts: {str(e)}")
+                raise RuntimeError(f"Could not initialize database: {str(e)}")
+            else:
+                logging.warning(f"Database initialization attempt {attempt + 1} failed: {str(e)}. Retrying...")
+                await asyncio.sleep(5)
     
-    # Create upload directories if they don't exist
+    # --- Ensure upload directories exist ---
     for dir_path in UPLOAD_DIRS:
-    os.makedirs(dir_path, exist_ok=True)
-    logging.info(f"Ensured directory exists: {dir_path}")
+        os.makedirs(dir_path, exist_ok=True)
+        logging.info(f"Ensured directory exists: {dir_path}")
 
-logging.info("Startup: Creating upload directories completed successfully.")
+    logging.info("Startup completed successfully.")
 
-# Example: retry database initialization up to 3 times
-for attempt in range(3):
-    try:
-        await initialize_database()
-        logging.info("Database initialized successfully.")
-        break
-    except Exception as e:
-        if attempt == 2:  # Last attempt
-            logging.error(f"Failed to initialize database after {attempt + 1} attempts: {str(e)}")
-            raise RuntimeError(f"Could not initialize database: {str(e)}")
-        else:
-            logging.warning(f"Database initialization attempt {attempt + 1} failed: {str(e)}. Retrying...")
-            await asyncio.sleep(5)
+
+# --- Example placeholder functions ---
+def verify_email_config():
+    """Mock verification of email configuration."""
+    # Replace with actual logic
+    return True
+
+async def init_db():
+    """Mock database initialization."""
+    # Replace with your async DB setup logic
+    await asyncio.sleep(0.5)
+    logging.info("Database mock setup complete.")
+
+
+# --- Example usage ---
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+    asyncio.run(startup())
+
 
 @app.get("/api/health")
 async def health_check():
