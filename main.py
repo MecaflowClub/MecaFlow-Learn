@@ -15,11 +15,12 @@ from schemas import (
 from auth import (
     authenticate_user, create_access_token, get_current_user, require_teacher_or_admin,
     require_admin, get_password_hash, create_refresh_token, verify_refresh_token,
-    verify_password
+    verify_password, pwd_context
 )
 from database import init_db, users_collection, exercises_collection, submissions_collection, courses_collection
 from services.occComparison import compare_models
 from utils.email_utils import send_verification_code
+from utils.submission_utils import send_submission_email
 import random
 import os
 import shutil
@@ -38,16 +39,47 @@ app = FastAPI(
     version="1.0.0"
 )
 
+UPLOAD_DIRS = [
+    "uploads/assemblies",
+    "uploads/drawings",
+    "uploads/student-files",
+    "uploads/reference-files"
+]
+
+def verify_email_config():
+    """Verify all required email configuration is present"""
+    required_vars = ["SENDGRID_API_KEY", "FROM_EMAIL", "FROM_NAME", "TO_EMAIL"]
+    missing = [var for var in required_vars if not os.getenv(var)]
+    if missing:
+        logger.warning(f"Missing email configuration variables: {', '.join(missing)}")
+        return False
+    return True
+
 @app.on_event("startup")
 async def startup_event():
-    """Initialize database connection on startup"""
-    try:
-        # Initialize database with retries
-        for attempt in range(3):
-            try:
-                await init_db()
-                logging.info("Database initialized successfully")
-                return
+    """Initialize database connection and create necessary directories on startup"""
+    # Verify email configuration
+    if not verify_email_config():
+        logger.warning("Email configuration incomplete - manual validation emails may not work")
+    
+    # Initialize database with retries
+    for attempt in range(3):
+        try:
+            await init_db()
+            logging.info("Database initialized successfully")
+            break
+        except Exception as e:
+            if attempt == 2:  # Last attempt
+                logging.error(f"Failed to initialize database: {str(e)}")
+                raise e
+            await asyncio.sleep(1)
+    
+    # Create upload directories if they don't exist
+    for dir_path in UPLOAD_DIRS:
+        os.makedirs(dir_path, exist_ok=True)
+        logging.info(f"Ensured directory exists: {dir_path}")
+    
+    logging.info("Startup completed successfully")
             except Exception as e:
                 if attempt == 2:  # Last attempt
                     raise
@@ -247,7 +279,7 @@ async def test_password_hash(password: str = Body(...)):
     logger.info(f"Second hash: {second_hash}")
     logger.info(f"First hash verification: {verify_result}")
     logger.info(f"Second hash verification: {second_verify}")
-    logger.info(f"Cross verification (first hash with second verify): {verify_password(password, hashed)}")
+    logger.info(f"Cross verification (first hash with second verify): {pwd_context.verify(password, hashed)}")
     
     return {
         "original": password,
@@ -295,23 +327,23 @@ async def update_profile(payload: UpdateProfileRequest = Body(...), current_user
         logger.info(f"Password update requested - Current hash in DB: {stored_password}")
         
         # verify current password
-        if not verify_password(payload.current_password, stored_password):
+        if not pwd_context.verify(payload.current_password, stored_password):
             logger.warning("Password update failed - Current password verification failed")
             raise HTTPException(status_code=400, detail="Current password is incorrect")
         logger.info("Current password verified successfully")
         
         # ensure new != current
-        if verify_password(payload.new_password, stored_password):
+        if pwd_context.verify(payload.new_password, stored_password):
             logger.warning("Password update failed - New password same as current")
             raise HTTPException(status_code=400, detail="New password must be different from current password")
             
         # hash and set new password
-        new_hashed = get_password_hash(payload.new_password)
+        new_hashed = pwd_context.hash(payload.new_password)
         update_fields["password"] = new_hashed
         logger.info(f"Generated new password hash: {new_hashed}")
         
         # Verify the new hash works before saving
-        verify_test = verify_password(payload.new_password, new_hashed)
+        verify_test = pwd_context.verify(payload.new_password, new_hashed)
         if not verify_test:
             logger.error("Password update failed - New hash verification failed")
             raise HTTPException(status_code=500, detail="Generated password hash verification failed")
@@ -349,7 +381,7 @@ async def update_profile(payload: UpdateProfileRequest = Body(...), current_user
             logger.error(f"Found in DB: {new_stored_hash}")
             raise HTTPException(status_code=500, detail="Password update verification failed")
         
-        verify_final = verify_password(payload.new_password, new_stored_hash)
+        verify_final = pwd_context.verify(payload.new_password, new_stored_hash)
         if not verify_final:
             logger.error("Password update verification failed - Cannot verify with new password")
             raise HTTPException(status_code=500, detail="Password update verification failed")
@@ -522,54 +554,32 @@ async def verify_email_code(payload: EmailCodeVerifyRequest = Body(...)):
 
 @app.post("/api/auth/login")
 async def login(user: UserLogin = Body(...)):
-    try:
-        logger.info(f"Login attempt for email: {user.email}")
-        
-        # First check if user exists
-        db_user = await users_collection.find_one({"email": user.email})
-        if not db_user:
-            logger.warning(f"Login failed: No user found with email {user.email}")
-            raise HTTPException(
-                status_code=401,
-                detail="Email ou mot de passe incorrect"
-            )
-            
-        # Verify password using direct bcrypt comparison
-        stored_password = db_user.get("password", "")
-        if not stored_password or not verify_password(user.password[:72], stored_password):
-            logger.warning(f"Login failed: Invalid password for user {user.email}")
-            raise HTTPException(
-                status_code=401,
-                detail="Email ou mot de passe incorrect"
-            )
-            
-        # Check if user is active
-        if not db_user.get("is_active", True):
-            logger.warning(f"Login failed: User {user.email} is not active")
-            raise HTTPException(
-                status_code=401,
-                detail="Compte désactivé"
-            )
-            
-        # Create access token
-        token = create_access_token(data={"sub": db_user["email"]})
-        logger.info(f"Login successful for user {user.email}")
-        
-        return {
-            "success": True,
-            "access_token": token,
-            "token_type": "bearer",
-            "user": serialize_doc(db_user)
-        }
-        
-    except Exception as e:
-        logger.error(f"Login error for {user.email}: {str(e)}")
-        if isinstance(e, HTTPException):
-            raise e
-        raise HTTPException(
-            status_code=500,
-            detail="Une erreur est survenue lors de la connexion"
-        )
+    logger.info(f"Tentative de connexion: {user.email}")
+    print(f"Debug - Login attempt:")
+    print(f"- Email: {user.email}")
+    
+    # Get the user first to do some debug checks
+    db_user_check = await users_collection.find_one({"email": user.email})
+    if db_user_check:
+        stored_password = db_user_check.get("password", "")
+        print(f"- Found user with stored password hash: {stored_password}")
+        # Try direct password verification
+        direct_verify = pwd_context.verify(user.password, stored_password)
+        print(f"- Direct password verification result: {direct_verify}")
+    else:
+        print("- No user found with this email")
+    
+    db_user = await authenticate_user(user.email, user.password)
+    if not db_user:
+        raise HTTPException(status_code=401, detail="Email ou mot de passe incorrect")
+
+    token = create_access_token(data={"sub": db_user["email"]})
+    return {
+        "success": True,
+        "access_token": token,
+        "token_type": "bearer",
+        "user": serialize_doc(db_user)
+    }
 
 @app.post("/api/auth/refresh-token", response_model=Token)
 async def refresh_token(payload: TokenRefreshRequest):
@@ -950,6 +960,50 @@ async def submit_exercise(
     if level == "advanced" and order == 11:
         if ext != ".dxf":
             raise HTTPException(status_code=400, detail="Seuls les fichiers DXF sont autorisés pour cet exercice.")
+        file_id = str(uuid.uuid4())
+
+    # --- Special case: Manual validation exercises ---
+    special_manual = (
+        (level == "advanced" and order in [6, 7, 13, 14]) or
+        (level == "intermediate" and order == 18)
+    )
+    
+    if special_manual:
+        logger.info(f"Processing manual validation exercise - Level: {level}, Order: {order}")
+        
+        # Determine required file type based on exercise
+        if level == "advanced" and order in [6, 7]:
+            required_ext = ".sldprt"
+            exercise_type = "part"
+            logger.info(f"Exercise requires SLDPRT file")
+        else:
+            required_ext = ".sldasm"
+            exercise_type = "assembly"
+            logger.info(f"Exercise requires SLDASM file")
+
+        if ext.lower() != required_ext.lower():
+            raise HTTPException(
+                status_code=400,
+                detail=f"Seuls les fichiers {required_ext} sont autorisés pour cet exercice."
+            )
+
+        # Send email with file attachment
+        email_sent = await send_submission_email(
+            file_content=content,
+            filename=filename,
+            student_email=current_user.get("email"),
+            exercise_title=ex.get("title", "Unknown Exercise"),
+            exercise_type=exercise_type
+        )
+
+        if not email_sent:
+            logger.error(f"Failed to send submission email for {current_user.get('email')}")
+            raise HTTPException(
+                status_code=500,
+                detail="Échec de l'envoi de l'email de soumission. Veuillez réessayer."
+            )
+
+        # Store submission in database
         file_id = str(uuid.uuid4())
         path = os.path.join(UPLOAD_DIR, "drawings", f"{file_id}_{filename}")
         os.makedirs(os.path.dirname(path), exist_ok=True)

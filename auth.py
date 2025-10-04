@@ -20,7 +20,8 @@ REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
 
 print("ACCESS_TOKEN_EXPIRE_MINUTES =", ACCESS_TOKEN_EXPIRE_MINUTES)
 
-import bcrypt
+# Context pour le hachage des mots de passe
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # Security scheme
 security = HTTPBearer()
@@ -29,23 +30,10 @@ security = HTTPBearer()
 # Gestion des mots de passe
 # ===============================
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    try:
-        # Convert strings to bytes
-        pwd_bytes = plain_password.encode('utf-8')
-        hash_bytes = hashed_password.encode('utf-8')
-        # Verify the password
-        return bcrypt.checkpw(pwd_bytes, hash_bytes)
-    except Exception as e:
-        print(f"Password verification error: {str(e)}")
-        return False
+    return pwd_context.verify(plain_password, hashed_password)
 
 def get_password_hash(password: str) -> str:
-    # Convert password to bytes and generate salt
-    pwd_bytes = password.encode('utf-8')
-    salt = bcrypt.gensalt()
-    # Hash the password and convert back to string
-    hashed = bcrypt.hashpw(pwd_bytes, salt)
-    return hashed.decode('utf-8')
+    return pwd_context.hash(password)
 
 # ===============================
 # Gestion des tokens JWT
