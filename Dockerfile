@@ -11,9 +11,19 @@ WORKDIR /app
 # Copy requirements first for better caching
 COPY requirements.txt .
 
-# Create conda environment and install dependencies
-RUN conda create -n app-env python=3.11 && \
-    conda install -n app-env -c conda-forge pythonocc-core && \
+# Configure conda channels and create environment
+RUN conda config --add channels conda-forge && \
+    conda config --set channel_priority strict && \
+    for i in {1..3}; do \
+        echo "Attempt $i: Creating conda environment" && \
+        (conda create -n app-env python=3.11 -y && break) || \
+        (if [ $i -eq 3 ]; then exit 1; fi && sleep 5); \
+    done && \
+    for i in {1..3}; do \
+        echo "Attempt $i: Installing pythonocc-core" && \
+        (conda install -n app-env -c conda-forge pythonocc-core -y && break) || \
+        (if [ $i -eq 3 ]; then exit 1; fi && sleep 5); \
+    done && \
     conda clean -afy && \
     conda init bash && \
     echo "conda activate app-env" >> ~/.bashrc
