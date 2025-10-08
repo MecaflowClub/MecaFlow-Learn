@@ -2,7 +2,8 @@ from typing import Optional, Any, Dict, List
 from datetime import datetime, timedelta
 from bson import ObjectId
 import asyncio
-from fastapi import FastAPI, HTTPException, Depends, Body, File, UploadFile, Query
+from fastapi import FastAPI, HTTPException, Depends, Body, File, UploadFile, Query, Response
+from fastapi.background import BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer
 from fastapi.responses import FileResponse
@@ -858,12 +859,33 @@ def calculate_qcm_score(quiz_answers, qcm):
 
 @app.post("/api/exercises/{exercise_id}/submit")
 async def submit_exercise(
+    background_tasks: BackgroundTasks,
     exercise_id: str,
     file: UploadFile = File(...),
     quizAnswers: Optional[str] = Form(None),
     user_feedback: Optional[str] = Form(None),
     current_user: dict = Depends(get_current_user)
 ):
+    """Endpoint to submit an exercise with progress tracking."""
+    logger.info(f"Starting submission process for exercise {exercise_id}")
+    
+    # Create initial submission record to track progress
+    initial_sub = {
+        "exercise_id": exercise_id,
+        "user_id": str(current_user.get("_id", current_user.get("id"))),
+        "status": "processing",
+        "submitted_at": datetime.utcnow(),
+    }
+    submission_id = await submissions_collection.insert_one(initial_sub)
+    initial_sub["_id"] = str(submission_id.inserted_id)
+    
+    from services.background_tasks import process_model_comparison
+    
+    # Set a longer timeout for the response
+    # Set response headers for longer timeout
+    response = Response(content=None)
+    response.headers["X-Accel-Buffering"] = "no"
+    response.headers["Cache-Control"] = "no-cache"
     logger.info(f"Soumission exercice {exercise_id} par utilisateur {current_user.get('email')}")
     ex_obj = to_objectid(exercise_id)
     if not ex_obj:
@@ -893,14 +915,10 @@ async def submit_exercise(
     level = course.get("level") if course else "unknown"
     order = ex.get("order")
 
-    # --- Special cases for advanced level exercises ---
-    if level == "advanced":
-        if order == 11:
-            if ext != ".dxf":
-                raise HTTPException(status_code=400, detail="Seuls les fichiers DXF sont autorisés pour cet exercice.")
-        elif order == 2:
-            if ext not in [".step"]:
-                raise HTTPException(status_code=400, detail="Seuls les fichiers STEP ou SLDPRT sont autorisés pour cet exercice.")
+    # --- Special case: Exo 11 (advanced, DXF drawing) ---
+    if level == "advanced" and order == 11:
+        if ext != ".dxf":
+            raise HTTPException(status_code=400, detail="Seuls les fichiers DXF sont autorisés pour cet exercice.")
         file_id = str(uuid.uuid4())
         path = os.path.join(UPLOAD_DIR, "drawings", f"{file_id}_{filename}")
         os.makedirs(os.path.dirname(path), exist_ok=True)

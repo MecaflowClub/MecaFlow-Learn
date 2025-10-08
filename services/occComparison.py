@@ -172,8 +172,17 @@ def get_shape_properties(shape: TopoDS_Shape):
 
 def compare_models(submitted_path: str, reference_path: str, tol: float = 1e-3) -> Dict[str, Any]:
     """Compare two STEP models (can handle both single parts and assemblies)."""
+    import time
+    start_time = time.time()
+    
+    logging.info(f"Starting model comparison: {submitted_path} vs {reference_path}")
     sub_shape = read_step_file(submitted_path)
+    read_time = time.time() - start_time
+    logging.info(f"Read submitted file in {read_time:.2f} seconds")
+    
     ref_shape = read_step_file(reference_path)
+    total_read_time = time.time() - start_time
+    logging.info(f"Read both files in {total_read_time:.2f} seconds")
 
     sub_solids = get_solids_from_shape(sub_shape)
     ref_solids = get_solids_from_shape(ref_shape)
