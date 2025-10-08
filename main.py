@@ -1102,32 +1102,9 @@ async def submit_exercise(
                             "error": "Ce fichier contient un assemblage mais l'exercice demande une pièce unique"
                         }
                     else:
-                        try:
-                            cad_result = compare_models(path, reference_path)
-                        except ValueError as ve:
-                            # Handle specific validation errors from comparison system
-                            cad_result = {
-                                "success": False,
-                                "error": str(ve),
-                                "error_type": "validation"
-                            }
-                        except Exception as e:
-                            # Log unexpected errors
-                            logger.error(f"Error during model comparison: {str(e)}")
-                            cad_result = {
-                                "success": False,
-                                "error": "Une erreur s'est produite lors de la comparaison des modèles",
-                                "error_type": "system",
-                                "details": str(e)
-                            }
+                        cad_result = compare_models(path, reference_path)
     except Exception as e:
-        logger.error(f"Error processing submission: {str(e)}")
-        cad_result = {
-            "success": False,
-            "error": "Une erreur s'est produite lors du traitement de votre soumission",
-            "error_type": "system",
-            "details": str(e)
-        }
+        cad_result = {"success": False, "error": str(e)}
 
     # Only use DXF feedback/scoring for advanced exercise 11
     if level == "advanced" and order == 11:
@@ -1407,41 +1384,16 @@ async def compare_cad(
     try:
         from services.occComparison import compare_models, read_step_file, get_solids_from_shape
 
-        try:
-            # Check if it's an assembly or a single part
-            ref_shape = read_step_file(ref_path)
-            n_solids = len(get_solids_from_shape(ref_shape))
+        # Check if it's an assembly or a single part
+        ref_shape = read_step_file(ref_path)
+        n_solids = len(get_solids_from_shape(ref_shape))
 
-            if mode == "auto":
-                mode = "assembly" if n_solids > 1 else "step"
+        if mode == "auto":
+            mode = "assembly" if n_solids > 1 else "step"
 
-            # Use the same OpenCascade comparison for both modes
-            feedback = compare_models(sub_path, ref_path, tol=tol)
-            return {"mode": mode, "feedback": feedback}
-            
-        except ValueError as ve:
-            # Handle validation errors from comparison system
-            logger.warning(f"Validation error during comparison: {str(ve)}")
-            return {
-                "mode": mode,
-                "feedback": {
-                    "success": False,
-                    "error": str(ve),
-                    "error_type": "validation"
-                }
-            }
-        except Exception as e:
-            # Handle unexpected errors during comparison
-            logger.error(f"Error during model comparison: {str(e)}")
-            return {
-                "mode": mode,
-                "feedback": {
-                    "success": False,
-                    "error": "Une erreur s'est produite lors de la comparaison des modèles",
-                    "error_type": "system",
-                    "details": str(e)
-                }
-            }
+        # Use the same OpenCascade comparison for both modes
+        feedback = compare_models(sub_path, ref_path, tol=tol)
+        return {"mode": mode, "feedback": feedback}
 
     except Exception as e:
         logger.error(f"Error in CAD comparison: {str(e)}")
