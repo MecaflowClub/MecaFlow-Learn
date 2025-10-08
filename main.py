@@ -20,7 +20,6 @@ from auth import (
 from database import init_db, users_collection, exercises_collection, submissions_collection, courses_collection
 from services.occComparison import compare_models
 from utils.email_utils import send_verification_code
-from utils.submission_utils import send_submission_email
 import random
 import os
 import shutil
@@ -39,78 +38,24 @@ app = FastAPI(
     version="1.0.0"
 )
 
-UPLOAD_DIRS = [
-    "uploads/assemblies",
-    "uploads/drawings",
-    "uploads/student-files",
-    "uploads/reference-files"
-]
-
-def verify_email_config():
-    """Verify all required email configuration is present"""
-    required_vars = ["SENDGRID_API_KEY", "FROM_EMAIL", "FROM_NAME", "TO_EMAIL"]
-    missing = [var for var in required_vars if not os.getenv(var)]
-    if missing:
-        logger.warning(f"Missing email configuration variables: {', '.join(missing)}")
-        return False
-    return True
-
 @app.on_event("startup")
 async def startup_event():
-  import asyncio
-import os
-import logging
-
-# Example constants
-UPLOAD_DIRS = ["uploads/manual_validation", "uploads/results"]
-
-async def startup():
-    """Initialize database connection and create necessary directories on startup."""
-    
-    # Verify email configuration
-    if not verify_email_config():
-        logging.warning("Email configuration incomplete - manual validation emails may not work")
-    
-    # --- Initialize database with retries ---
-    for attempt in range(3):
-        try:
-            await init_db()
-            logging.info("Database initialized successfully.")
-            break
-        except Exception as e:
-            if attempt == 2:  # Last attempt
-                logging.error(f"Failed to initialize database after {attempt + 1} attempts: {str(e)}")
-                raise RuntimeError(f"Could not initialize database: {str(e)}")
-            else:
-                logging.warning(f"Database initialization attempt {attempt + 1} failed: {str(e)}. Retrying...")
-                await asyncio.sleep(5)
-    
-    # --- Ensure upload directories exist ---
-    for dir_path in UPLOAD_DIRS:
-        os.makedirs(dir_path, exist_ok=True)
-        logging.info(f"Ensured directory exists: {dir_path}")
-
-    logging.info("Startup completed successfully.")
-
-
-# --- Example placeholder functions ---
-def verify_email_config():
-    """Mock verification of email configuration."""
-    # Replace with actual logic
-    return True
-
-async def init_db():
-    """Mock database initialization."""
-    # Replace with your async DB setup logic
-    await asyncio.sleep(0.5)
-    logging.info("Database mock setup complete.")
-
-
-# --- Example usage ---
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
-    asyncio.run(startup())
-
+    """Initialize database connection on startup"""
+    try:
+        # Initialize database with retries
+        for attempt in range(3):
+            try:
+                await init_db()
+                logging.info("Database initialized successfully")
+                return
+    except Exception as e:
+        if attempt == 2:  # Last attempt
+            raise
+            logging.warning(f"Database initialization attempt {attempt + 1} failed, retrying...")
+            await asyncio.sleep(5)
+    except Exception as e:
+        logging.error(f"Failed to initialize database: {str(e)}")
+        raise RuntimeError(f"Could not initialize database: {str(e)}")
 
 @app.get("/api/health")
 async def health_check():
@@ -950,8 +895,7 @@ async def submit_exercise(
     user_feedback: Optional[str] = Form(None),
     current_user: dict = Depends(get_current_user)
 ):
-    logger.info(f"Exercise submission - ID: {exercise_id}, User: {current_user.get('email')}")
-    logger.info(f"Exercise details - Course level: {level}, Exercise order: {order}")
+    logger.info(f"Soumission exercice {exercise_id} par utilisateur {current_user.get('email')}")
     ex_obj = to_objectid(exercise_id)
     if not ex_obj:
         ex = await exercises_collection.find_one({"_id": exercise_id})
@@ -984,50 +928,6 @@ async def submit_exercise(
     if level == "advanced" and order == 11:
         if ext != ".dxf":
             raise HTTPException(status_code=400, detail="Seuls les fichiers DXF sont autorisés pour cet exercice.")
-        file_id = str(uuid.uuid4())
-
-    # --- Special case: Manual validation exercises ---
-    special_manual = (
-        (level == "advanced" and order in [6, 7, 13, 14]) or
-        (level == "intermediate" and order == 18)
-    )
-    
-    if special_manual:
-        logger.info(f"Manual validation exercise detected - Level: {level}, Order: {order}, Required file: {'.sldprt' if exercise_type == 'part' else '.sldasm'}")
-        
-        # Determine required file type based on exercise
-        if level == "advanced" and order in [6, 7]:
-            required_ext = ".sldprt"
-            exercise_type = "part"
-            logger.info(f"Exercise requires SLDPRT file")
-        else:
-            required_ext = ".sldasm"
-            exercise_type = "assembly"
-            logger.info(f"Exercise requires SLDASM file")
-
-        if ext.lower() != required_ext.lower():
-            raise HTTPException(
-                status_code=400,
-                detail=f"Seuls les fichiers {required_ext} sont autorisés pour cet exercice."
-            )
-
-        # Send email with file attachment
-        email_sent = await send_submission_email(
-            file_content=content,
-            filename=filename,
-            student_email=current_user.get("email"),
-            exercise_title=ex.get("title", "Unknown Exercise"),
-            exercise_type=exercise_type
-        )
-
-        if not email_sent:
-            logger.error(f"Failed to send submission email - User: {current_user.get('email')}, Exercise: {ex.get('title', 'Unknown')}, Type: {exercise_type}")
-            raise HTTPException(
-                status_code=500,
-                detail="Échec de l'envoi de l'email de soumission. Veuillez réessayer."
-            )
-
-        # Store submission in database
         file_id = str(uuid.uuid4())
         path = os.path.join(UPLOAD_DIR, "drawings", f"{file_id}_{filename}")
         os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -1471,11 +1371,8 @@ async def manual_validate_submission(
     await users_collection.update_one(user_filter, {"$pull": {"scores": {"exercise_id": exercise_id}}})
     await users_collection.update_one(user_filter, {"$push": {"scores": {"exercise_id": exercise_id, "score": best_score}}})
 
-    # Only mark as completed and update progress if best score >= 90 (matching other exercises)
-    logger.info(f"Manual validation score check - Score: {best_score}, Required: 90")
-    if best_score >= 90:
-        user_doc = await users_collection.find_one(user_filter)
-        logger.info(f"Manual validation passed - User: {user_doc.get('email') if user_doc else 'Unknown'}, Exercise: {exercise_id}, Score: {best_score}")
+    # Only mark as completed and update progress if best score >= 80
+    if best_score >= 80:
         await users_collection.update_one(user_filter, {"$addToSet": {"completedExercises": exercise_id}})
         ex_obj = to_objectid(exercise_id)
         ex = await exercises_collection.find_one({"_id": ex_obj}) if ex_obj else await exercises_collection.find_one({"_id": exercise_id})
