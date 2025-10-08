@@ -41,21 +41,18 @@ app = FastAPI(
 @app.on_event("startup")
 async def startup_event():
     """Initialize database connection on startup"""
-    try:
-        # Initialize database with retries
-        for attempt in range(3):
-            try:
-                await init_db()
-                logging.info("Database initialized successfully")
-                return
-    except Exception as e:
-        if attempt == 2:  # Last attempt
-            raise
-            logging.warning(f"Database initialization attempt {attempt + 1} failed, retrying...")
-            await asyncio.sleep(5)
-    except Exception as e:
-        logging.error(f"Failed to initialize database: {str(e)}")
-        raise RuntimeError(f"Could not initialize database: {str(e)}")
+    for attempt in range(3):
+        try:
+            await init_db()
+            logging.info("Database initialized successfully")
+            return
+        except Exception as e:
+            if attempt == 2:  # Last attempt
+                logging.error(f"Failed to initialize database: {str(e)}")
+                raise RuntimeError(f"Could not initialize database: {str(e)}")
+            else:
+                logging.warning(f"Database initialization attempt {attempt + 1} failed, retrying...")
+                await asyncio.sleep(5)
 
 @app.get("/api/health")
 async def health_check():
@@ -384,32 +381,8 @@ logging.basicConfig(
 logger = logging.getLogger("cad-platform")
 
 # =============================================================================
-# HELPERS
+# AUTHENTIFICATION
 # =============================================================================
-def serialize_doc(doc: Any) -> Any:
-    """Convert ObjectId recursively to str. If doc is None, return None."""
-    if doc is None:
-        return None
-
-    def convert(value):
-        if isinstance(value, ObjectId):
-            return str(value)
-        elif isinstance(value, list):
-            return [convert(v) for v in value]
-        elif isinstance(value, dict):
-            return {k: convert(v) for k, v in value.items()}
-        else:
-            return value
-    return convert(doc)
-
-def to_objectid(val: Optional[str]) -> Optional[ObjectId]:
-    """Try to convert a string to ObjectId, else return None."""
-    if not val:
-        return None
-    try:
-        return ObjectId(val)
-    except Exception:
-        return None
 
 # =============================================================================
 # AUTHENTIFICATION
@@ -962,19 +935,7 @@ async def submit_exercise(
                         "error": f"Erreur lors de la comparaison DXF: {str(e)}"
                     }
             
-            if not reference_path:
-                cad_result = {
-                    "success": False, 
-                    "error": "Fichier de référence introuvable",
-                    "details": f"Chemins essayés: {', '.join(reference_paths)}"
-                }
-            else:
-                try:
-                    from services.occCompareDXF import compare_dxf_drawings
-                except Exception as e:
-                    cad_result = {"success": False, "error": f"Erreur d'importation du module de comparaison DXF: {str(e)}"}
-                else:
-                    cad_result = compare_dxf_drawings(path, reference_path)
+            # Remove redundant check since we already handled this case above
 
         # QCM scoring
         quiz_answers = None
@@ -1242,11 +1203,13 @@ async def submit_exercise(
         # Get previous best score for this exercise
         latest_user = await users_collection.find_one(user_filter)
         prev_score = None
-        if latest_user:
-            for s in latest_user.get("scores", []):
-                if s.get("exercise_id") == exercise_id:
-                    prev_score = s.get("score", 0)
-                    break
+        if latest_user and isinstance(latest_user, dict):
+            scores = latest_user.get("scores", [])
+            if isinstance(scores, list):
+                for s in scores:
+                    if isinstance(s, dict) and s.get("exercise_id") == exercise_id:
+                        prev_score = s.get("score", 0)
+                        break
         best_score = max(total_score, prev_score) if prev_score is not None else total_score
 
         await users_collection.update_one(user_filter, {"$addToSet": {"completedExercises": exercise_id}})
@@ -1360,11 +1323,13 @@ async def manual_validate_submission(
     user_filter = {"_id": user_obj} if user_obj else {"_id": user_id}  # sometimes stored as string
     user = await users_collection.find_one(user_filter)
     prev_score = None
-    if user:
-        for s in user.get("scores", []):
-            if s.get("exercise_id") == exercise_id:
-                prev_score = s.get("score", 0)
-                break
+    if user and isinstance(user, dict):
+        scores = user.get("scores", [])
+        if isinstance(scores, list):
+            for s in scores:
+                if isinstance(s, dict) and s.get("exercise_id") == exercise_id:
+                    prev_score = s.get("score", 0)
+                    break
     best_score = max(score, prev_score) if prev_score is not None else score
 
     # Update the user's score for this exercise to the best score
