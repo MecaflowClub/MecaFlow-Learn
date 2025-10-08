@@ -893,10 +893,14 @@ async def submit_exercise(
     level = course.get("level") if course else "unknown"
     order = ex.get("order")
 
-    # --- Special case: Exo 11 (advanced, DXF drawing) ---
-    if level == "advanced" and order == 11:
-        if ext != ".dxf":
-            raise HTTPException(status_code=400, detail="Seuls les fichiers DXF sont autorisés pour cet exercice.")
+    # --- Special cases for advanced level exercises ---
+    if level == "advanced":
+        if order == 11:
+            if ext != ".dxf":
+                raise HTTPException(status_code=400, detail="Seuls les fichiers DXF sont autorisés pour cet exercice.")
+        elif order == 2:
+            if ext not in [".step"]:
+                raise HTTPException(status_code=400, detail="Seuls les fichiers STEP ou SLDPRT sont autorisés pour cet exercice.")
         file_id = str(uuid.uuid4())
         path = os.path.join(UPLOAD_DIR, "drawings", f"{file_id}_{filename}")
         os.makedirs(os.path.dirname(path), exist_ok=True)
