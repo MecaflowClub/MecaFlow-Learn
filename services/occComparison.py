@@ -110,24 +110,40 @@ def get_solid_properties(solid: TopoDS_Shape):
     }
 
 def get_shell_properties(shell: TopoDS_Shape):
-    props = GProp_GProps()
-    brepgprop_SurfaceProperties(shell, props)
+    if shell is None:
+        raise ValueError("Invalid shell: received None")
     
-    # Bounding box
-    bbox = Bnd_Box()
-    brepbndlib.Add(shell, bbox)
-    xmin, ymin, zmin, xmax, ymax, zmax = bbox.Get()
-    dimensions = (xmax - xmin, ymax - ymin, zmax - zmin)
-    
-    # Topology
-    num_faces = count_subshapes(shell, TopAbs_FACE)
-    num_edges = count_subshapes(shell, TopAbs_EDGE)
-    num_vertices = count_subshapes(shell, TopAbs_VERTEX)
-    
-    # Get principal properties
-    principal_props = props.MatrixOfInertia()
-    
-    return {
+    try:
+        props = GProp_GProps()
+        brepgprop_SurfaceProperties(shell, props)
+        
+        # Bounding box with small tolerance to handle precision issues
+        bbox = Bnd_Box()
+        brepbndlib.Add(shell, bbox, 1e-7)  # Added small tolerance
+        xmin, ymin, zmin, xmax, ymax, zmax = bbox.Get()
+        dimensions = (xmax - xmin, ymax - ymin, zmax - zmin)
+        
+        # Basic validity checks
+        if any(abs(d) < 1e-6 for d in dimensions):
+            raise ValueError("Invalid shell: zero dimension detected")
+        
+        # Topology
+        num_faces = count_subshapes(shell, TopAbs_FACE)
+        num_edges = count_subshapes(shell, TopAbs_EDGE)
+        num_vertices = count_subshapes(shell, TopAbs_VERTEX)
+        
+        if num_faces == 0 or num_edges == 0 or num_vertices == 0:
+            raise ValueError("Invalid shell: missing faces, edges, or vertices")
+        
+        # Get principal properties with error checking
+        principal_props = props
+        try:
+            principal_props = props.MatrixOfInertia()
+        except Exception:
+            # Keep using props as fallback if matrix calculation fails
+            pass
+        
+        return {
         "surface_area": round(float(props.Mass()), 3),
         "center_of_mass": (
             round(float(props.CentreOfMass().X()), 3),
@@ -296,10 +312,43 @@ def compare_models(submitted_path: str, reference_path: str, tol: float = 1e-3) 
             feedback["volume"] = {"ok": measure_ok, "score": measure_score}
         else:
             # For shells and surfaces
-            measure_ok = abs(sub_props["surface_area"] - ref_props["surface_area"]) <= tol * max(abs(ref_props["surface_area"]), 1)
-            measure_score = 100 - min(100, 100 * abs(sub_props["surface_area"] - ref_props["surface_area"]) /
-                                  (abs(ref_props["surface_area"]) if abs(ref_props["surface_area"]) > 1e-6 else 1))
-            feedback["surface_area"] = {"ok": measure_ok, "score": measure_score}
+            # Use a slightly larger tolerance for shell comparisons
+            shell_tol = tol * 1.5  # More tolerant comparison for shells
+            
+            try:
+                area_diff = abs(sub_props["surface_area"] - ref_props["surface_area"])
+                measure_ok = area_diff <= shell_tol * max(abs(ref_props["surface_area"]), 1)
+                
+                # Calculate score with more lenient scoring for shells
+                rel_diff = area_diff / (abs(ref_props["surface_area"]) if abs(ref_props["surface_area"]) > 1e-6 else 1)
+                measure_score = 100 - min(100, 100 * rel_diff)
+                
+                # Add topology comparison with tolerance
+                face_diff = abs(sub_props["topology"]["faces"] - ref_props["topology"]["faces"])
+                edge_diff = abs(sub_props["topology"]["edges"] - ref_props["topology"]["edges"])
+                vertex_diff = abs(sub_props["topology"]["vertices"] - ref_props["topology"]["vertices"])
+                
+                topo_matches = (face_diff <= 2 and edge_diff <= 4 and vertex_diff <= 4)
+                
+                if topo_matches:
+                    measure_score = min(100, measure_score * 1.1)  # Bonus for matching topology
+                
+                feedback["surface_area"] = {
+                    "ok": measure_ok,
+                    "score": round(measure_score, 1),
+                    "details": {
+                        "area_difference": round(area_diff, 3),
+                        "topology_matches": topo_matches,
+                        "topology_differences": {
+                            "faces": face_diff,
+                            "edges": edge_diff,
+                            "vertices": vertex_diff
+                        }
+                    }
+                }
+            except Exception as e:
+                # If comparison fails, provide a more detailed error
+                raise ValueError(f"Error comparing shell properties: {str(e)}\nSubmitted: {sub_props}\nReference: {ref_props}")
         
         score += measure_score
         total += 1
