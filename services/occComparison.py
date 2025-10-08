@@ -234,6 +234,63 @@ def get_face_properties(face: TopoDS_Shape):
         )
     }
 
+def merge_shell_properties(shells_props):
+    """Merge properties from multiple shells into a single property set."""
+    if not shells_props:
+        return None
+    
+    total_area = 0.0
+    weighted_com = [0.0, 0.0, 0.0]
+    total_edges = 0
+    total_vertices = 0
+    total_faces = 0
+    
+    # Find the overall bounding box
+    min_coords = [float('inf'), float('inf'), float('inf')]
+    max_coords = [float('-inf'), float('-inf'), float('-inf')]
+    
+    for prop in shells_props:
+        area = prop["surface_area"]
+        total_area += area
+        
+        # Weighted center of mass
+        com = prop["center_of_mass"]
+        for i in range(3):
+            weighted_com[i] += com[i] * area
+            
+        # Update bounding box
+        dims = prop["dimensions"]
+        com = prop["center_of_mass"]
+        for i in range(3):
+            min_coords[i] = min(min_coords[i], com[i] - dims[i]/2)
+            max_coords[i] = max(max_coords[i], com[i] + dims[i]/2)
+        
+        # Accumulate topology
+        total_edges += prop["topology"]["edges"]
+        total_vertices += prop["topology"]["vertices"]
+        total_faces += prop["topology"]["faces"]
+    
+    # Finalize center of mass
+    if total_area > 0:
+        weighted_com = [x/total_area for x in weighted_com]
+    
+    # Calculate overall dimensions
+    dimensions = [max_coords[i] - min_coords[i] for i in range(3)]
+    
+    return {
+        "surface_area": round(total_area, 3),
+        "center_of_mass": tuple(round(x, 3) for x in weighted_com),
+        "dimensions": tuple(round(x, 3) for x in dimensions),
+        "topology": {
+            "faces": total_faces,
+            "edges": total_edges,
+            "vertices": total_vertices
+        },
+        "type": "multi-shell",
+        "principal_moments": tuple(round(total_area, 3) for _ in range(3)),  # Simplified for multi-shell
+        "num_shells": len(shells_props)
+    }
+
 def get_shape_properties(shape: TopoDS_Shape):
     """Global properties for models (solids, shells, or surfaces) with enhanced type detection."""
     if not shape:
@@ -251,33 +308,57 @@ def get_shape_properties(shape: TopoDS_Shape):
             try:
                 return get_solid_properties(solids[0])
             except Exception as e:
-                # Log the error but continue trying other types
                 pass
         
-        # Try shells if no valid solids
+        # Handle shells - try to process all shells
         shells = get_shells_from_shape(shape)
         if shells:
             try:
-                return get_shell_properties(shells[0])
+                if len(shells) == 1:
+                    return get_shell_properties(shells[0])
+                else:
+                    # Process multiple shells
+                    shell_properties = []
+                    for shell in shells:
+                        try:
+                            props = get_shell_properties(shell)
+                            shell_properties.append(props)
+                        except Exception:
+                            continue
+                    
+                    if shell_properties:
+                        return merge_shell_properties(shell_properties)
+                    
             except Exception as e:
-                # Log the error but continue trying faces
                 pass
         
-        # Finally try individual faces
+        # Finally try individual faces if no valid shells
         faces = get_faces_from_shape(shape)
         if faces:
-            try:
-                return get_face_properties(faces[0])
-            except Exception as e:
-                # If we get here, we've tried everything
-                pass
+            if len(faces) == 1:
+                try:
+                    return get_face_properties(faces[0])
+                except Exception:
+                    pass
+            else:
+                # Try to process all faces as a collection
+                face_properties = []
+                for face in faces:
+                    try:
+                        props = get_face_properties(face)
+                        face_properties.append(props)
+                    except Exception:
+                        continue
+                
+                if face_properties:
+                    return merge_shell_properties(face_properties)  # Reuse the merge function
         
         # If we get here, we couldn't process any geometry
         details = f"Found {num_solids} solids, {num_shells} shells, {num_faces} faces"
         if num_solids == 0 and num_shells == 0 and num_faces == 0:
             raise ValueError(f"No valid geometry found in shape. {details}")
         else:
-            raise ValueError(f"Found geometry but failed to process it. {details}")
+            raise ValueError(f"Failed to process any valid geometry. {details}")
             
     except Exception as e:
         raise ValueError(f"Error analyzing shape: {str(e)}")
@@ -363,6 +444,9 @@ def compare_models(submitted_path: str, reference_path: str, tol: float = 1e-3) 
         score += dims_score
         total += 1
 
+        if not sub_props or not ref_props:
+            raise ValueError("Failed to get properties for comparison")
+
         # Volume or Surface Area with type-specific comparisons
         if "volume" in sub_props and "volume" in ref_props:
             # For solids
@@ -374,44 +458,74 @@ def compare_models(submitted_path: str, reference_path: str, tol: float = 1e-3) 
             total += 1
             
         else:
-            # For shells and surfaces
+            # For shells and surfaces (including multi-shell)
             if "type" not in sub_props or "type" not in ref_props:
                 raise ValueError("Missing shape type information")
-                
-            # Check if types match
-            type_match = sub_props["type"] == ref_props["type"]
-            type_score = 100 if type_match else 0
-            feedback["type_match"] = {"ok": type_match, "score": type_score}
+            
+            # Type comparison with more flexibility
+            sub_type = sub_props["type"]
+            ref_type = ref_props["type"]
+            type_match = sub_type == ref_type or (
+                sub_type in ["shell", "multi-shell"] and ref_type in ["shell", "multi-shell"]
+            )
+            type_score = 100 if type_match else 50 if (sub_type != "surface" and ref_type != "surface") else 0
+            feedback["type_match"] = {
+                "ok": type_match,
+                "score": type_score,
+                "submitted": sub_type,
+                "reference": ref_type
+            }
             score += type_score
             total += 1
             
-            # Surface area comparison
-            area_ok = abs(sub_props["surface_area"] - ref_props["surface_area"]) <= tol * max(abs(ref_props["surface_area"]), 1)
+            # Surface area comparison with tolerance based on complexity
+            area_tolerance = tol * (2.0 if sub_type == "multi-shell" or ref_type == "multi-shell" else 1.0)
+            area_ok = abs(sub_props["surface_area"] - ref_props["surface_area"]) <= area_tolerance * max(abs(ref_props["surface_area"]), 1)
             area_score = 100 - min(100, 100 * abs(sub_props["surface_area"] - ref_props["surface_area"]) /
                                 (abs(ref_props["surface_area"]) if abs(ref_props["surface_area"]) > 1e-6 else 1))
             
-            # Topology comparison with weighted scoring
-            edge_diff = abs(sub_props["topology"]["edges"] - ref_props["topology"]["edges"])
-            vertex_diff = abs(sub_props["topology"]["vertices"] - ref_props["topology"]["vertices"])
+            # Enhanced topology comparison for multi-shell
+            sub_topo = sub_props["topology"]
+            ref_topo = ref_props["topology"]
+            
+            # Calculate topology differences with tolerance for multi-shell
+            edge_diff_pct = abs(sub_topo["edges"] - ref_topo["edges"]) / max(ref_topo["edges"], 1)
+            vertex_diff_pct = abs(sub_topo["vertices"] - ref_topo["vertices"]) / max(ref_topo["vertices"], 1)
+            face_diff_pct = abs(sub_topo["faces"] - ref_topo["faces"]) / max(ref_topo["faces"], 1)
+            
+            # More lenient scoring for multi-shell objects
+            topo_tolerance = 0.2 if (sub_type == "multi-shell" or ref_type == "multi-shell") else 0.1
             topo_score = 100
-            if edge_diff > 0:
-                topo_score -= min(50, edge_diff * 10)  # Deduct up to 50 points for edge differences
-            if vertex_diff > 0:
-                topo_score -= min(50, vertex_diff * 10)  # Deduct up to 50 points for vertex differences
+            if edge_diff_pct > topo_tolerance:
+                topo_score -= min(40, edge_diff_pct * 200)
+            if vertex_diff_pct > topo_tolerance:
+                topo_score -= min(30, vertex_diff_pct * 150)
+            if face_diff_pct > topo_tolerance:
+                topo_score -= min(30, face_diff_pct * 150)
+            
+            topo_score = max(0, topo_score)  # Ensure non-negative score
             
             feedback["surface_analysis"] = {
-                "area": {"ok": area_ok, "score": area_score},
-                "topology": {"ok": edge_diff == 0 and vertex_diff == 0, "score": topo_score},
-                "type": sub_props["type"],
+                "area": {"ok": area_ok, "score": round(area_score, 1)},
+                "topology": {
+                    "ok": topo_score > 80,
+                    "score": round(topo_score, 1)
+                },
+                "type": sub_type,
                 "details": {
-                    "edge_difference": edge_diff,
-                    "vertex_difference": vertex_diff
+                    "edge_difference_percent": round(edge_diff_pct * 100, 1),
+                    "vertex_difference_percent": round(vertex_diff_pct * 100, 1),
+                    "face_difference_percent": round(face_diff_pct * 100, 1),
+                    "num_shells": sub_props.get("num_shells", 1)
                 }
             }
             
-            # Add weighted scores to total
-            score += area_score * 0.6  # Surface area is 60% of the score
-            score += topo_score * 0.4  # Topology is 40% of the score
+            # Weighted scoring adjusted for multi-shell
+            area_weight = 0.5 if (sub_type == "multi-shell" or ref_type == "multi-shell") else 0.6
+            topo_weight = 1.0 - area_weight
+            
+            score += area_score * area_weight
+            score += topo_score * topo_weight
             total += 1
 
         # Topology
