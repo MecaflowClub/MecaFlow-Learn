@@ -2,8 +2,7 @@ from typing import Optional, Any, Dict, List
 from datetime import datetime, timedelta
 from bson import ObjectId
 import asyncio
-from fastapi import FastAPI, HTTPException, Depends, Body, File, UploadFile, Query, Response
-from fastapi.background import BackgroundTasks
+from fastapi import FastAPI, HTTPException, Depends, Body, File, UploadFile, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer
 from fastapi.responses import FileResponse
@@ -859,33 +858,12 @@ def calculate_qcm_score(quiz_answers, qcm):
 
 @app.post("/api/exercises/{exercise_id}/submit")
 async def submit_exercise(
-    background_tasks: BackgroundTasks,
     exercise_id: str,
     file: UploadFile = File(...),
     quizAnswers: Optional[str] = Form(None),
     user_feedback: Optional[str] = Form(None),
     current_user: dict = Depends(get_current_user)
 ):
-    """Endpoint to submit an exercise with progress tracking."""
-    logger.info(f"Starting submission process for exercise {exercise_id}")
-    
-    # Create initial submission record to track progress
-    initial_sub = {
-        "exercise_id": exercise_id,
-        "user_id": str(current_user.get("_id", current_user.get("id"))),
-        "status": "processing",
-        "submitted_at": datetime.utcnow(),
-    }
-    submission_id = await submissions_collection.insert_one(initial_sub)
-    initial_sub["_id"] = str(submission_id.inserted_id)
-    
-    from services.background_tasks import process_model_comparison
-    
-    # Set a longer timeout for the response
-    # Set response headers for longer timeout
-    response = Response(content=None)
-    response.headers["X-Accel-Buffering"] = "no"
-    response.headers["Cache-Control"] = "no-cache"
     logger.info(f"Soumission exercice {exercise_id} par utilisateur {current_user.get('email')}")
     ex_obj = to_objectid(exercise_id)
     if not ex_obj:
@@ -1096,11 +1074,13 @@ async def submit_exercise(
             cad_result = {"success": False, "error": f"Fichier de référence introuvable: {reference_path}"}
         else:
 
-                # Pour les exercices de surfacing (advanced, exercices spécifiques)
-                if level == "advanced" and order in [15, 16, 17]:  # exercices de surfacing
-                    cad_result = compare_models(path, reference_path)
+                # Pour les exercices spécifiques (surfacing et shell)
+                if level == "advanced" and order in [2, 15, 16, 17]:  # Exercice 2 (bouteille) + exercices de surfacing
+                    from services.occComparison import compare_shell_models
+                    logger.info("Comparing shell/surface models...")
+                    cad_result = compare_shell_models(path, reference_path)
                 else:
-                    # Lire et analyser le fichier soumis
+                    # Lire et analyser le fichier soumis pour les pièces solides
                     sub_shape = read_step_file(path)
                     sub_solids = get_solids_from_shape(sub_shape)
                     
@@ -1122,9 +1102,32 @@ async def submit_exercise(
                             "error": "Ce fichier contient un assemblage mais l'exercice demande une pièce unique"
                         }
                     else:
-                        cad_result = compare_models(path, reference_path)
+                        try:
+                            cad_result = compare_models(path, reference_path)
+                        except ValueError as ve:
+                            # Handle specific validation errors from comparison system
+                            cad_result = {
+                                "success": False,
+                                "error": str(ve),
+                                "error_type": "validation"
+                            }
+                        except Exception as e:
+                            # Log unexpected errors
+                            logger.error(f"Error during model comparison: {str(e)}")
+                            cad_result = {
+                                "success": False,
+                                "error": "Une erreur s'est produite lors de la comparaison des modèles",
+                                "error_type": "system",
+                                "details": str(e)
+                            }
     except Exception as e:
-        cad_result = {"success": False, "error": str(e)}
+        logger.error(f"Error processing submission: {str(e)}")
+        cad_result = {
+            "success": False,
+            "error": "Une erreur s'est produite lors du traitement de votre soumission",
+            "error_type": "system",
+            "details": str(e)
+        }
 
     # Only use DXF feedback/scoring for advanced exercise 11
     if level == "advanced" and order == 11:
@@ -1404,16 +1407,41 @@ async def compare_cad(
     try:
         from services.occComparison import compare_models, read_step_file, get_solids_from_shape
 
-        # Check if it's an assembly or a single part
-        ref_shape = read_step_file(ref_path)
-        n_solids = len(get_solids_from_shape(ref_shape))
+        try:
+            # Check if it's an assembly or a single part
+            ref_shape = read_step_file(ref_path)
+            n_solids = len(get_solids_from_shape(ref_shape))
 
-        if mode == "auto":
-            mode = "assembly" if n_solids > 1 else "step"
+            if mode == "auto":
+                mode = "assembly" if n_solids > 1 else "step"
 
-        # Use the same OpenCascade comparison for both modes
-        feedback = compare_models(sub_path, ref_path, tol=tol)
-        return {"mode": mode, "feedback": feedback}
+            # Use the same OpenCascade comparison for both modes
+            feedback = compare_models(sub_path, ref_path, tol=tol)
+            return {"mode": mode, "feedback": feedback}
+            
+        except ValueError as ve:
+            # Handle validation errors from comparison system
+            logger.warning(f"Validation error during comparison: {str(ve)}")
+            return {
+                "mode": mode,
+                "feedback": {
+                    "success": False,
+                    "error": str(ve),
+                    "error_type": "validation"
+                }
+            }
+        except Exception as e:
+            # Handle unexpected errors during comparison
+            logger.error(f"Error during model comparison: {str(e)}")
+            return {
+                "mode": mode,
+                "feedback": {
+                    "success": False,
+                    "error": "Une erreur s'est produite lors de la comparaison des modèles",
+                    "error_type": "system",
+                    "details": str(e)
+                }
+            }
 
     except Exception as e:
         logger.error(f"Error in CAD comparison: {str(e)}")

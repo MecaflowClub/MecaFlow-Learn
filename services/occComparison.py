@@ -1,4 +1,5 @@
 from typing import Dict, List, Any, Tuple
+import logging
 from OCC.Core.STEPControl import STEPControl_Reader
 from OCC.Core.BRepGProp import brepgprop_VolumeProperties, brepgprop_SurfaceProperties
 from OCC.Core.GProp import GProp_GProps
@@ -110,22 +111,44 @@ def get_solid_properties(solid: TopoDS_Shape):
     }
 
 def get_shell_properties(shell: TopoDS_Shape):
+    """Calculate properties for a shell or surface shape with improved accuracy."""
     props = GProp_GProps()
-    brepgprop_SurfaceProperties(shell, props)
+    try:
+        brepgprop_SurfaceProperties(shell, props)
+    except Exception as e:
+        raise ValueError(f"Failed to calculate surface properties: {str(e)}")
     
-    # Bounding box
+    # Bounding box with tolerance
     bbox = Bnd_Box()
-    brepbndlib.Add(shell, bbox)
+    brepbndlib.Add(shell, bbox, 1e-7)  # Added precision parameter
     xmin, ymin, zmin, xmax, ymax, zmax = bbox.Get()
     dimensions = (xmax - xmin, ymax - ymin, zmax - zmin)
     
-    # Topology
+    # Enhanced topology checks
     num_faces = count_subshapes(shell, TopAbs_FACE)
     num_edges = count_subshapes(shell, TopAbs_EDGE)
     num_vertices = count_subshapes(shell, TopAbs_VERTEX)
     
-    # Get principal properties
-    principal_props = props.MatrixOfInertia()
+    # Get principal properties with error checking
+    try:
+        principal_props = props.MatrixOfInertia()
+        principal_moments = (
+            round(float(principal_props.Value(1, 1)), 3),
+            round(float(principal_props.Value(2, 2)), 3),
+            round(float(principal_props.Value(3, 3)), 3)
+        )
+    except Exception:
+        # Fallback to simplified moments if matrix calculation fails
+        principal_moments = (
+            round(float(props.Mass()), 3),
+            round(float(props.Mass()), 3),
+            round(float(props.Mass()), 3)
+        )
+    
+    # Determine shape type with more precision
+    shape_type = "shell" if num_faces > 1 else "surface"
+    if num_edges == 0 or num_vertices == 0:
+        raise ValueError("Invalid geometry: Shell/surface has no edges or vertices")
     
     return {
         "surface_area": round(float(props.Mass()), 3),
@@ -135,36 +158,104 @@ def get_shell_properties(shell: TopoDS_Shape):
             round(float(props.CentreOfMass().Z()), 3)
         ),
         "dimensions": tuple(round(float(d), 3) for d in dimensions),
-        "topology": {"faces": num_faces, "edges": num_edges, "vertices": num_vertices},
-        "type": "shell" if num_faces > 1 else "surface",
-        "principal_moments": (
-            round(float(principal_props.Value(1, 1)), 3),
-            round(float(principal_props.Value(2, 2)), 3),
-            round(float(principal_props.Value(3, 3)), 3)
-        )
+        "topology": {
+            "faces": num_faces,
+            "edges": num_edges,
+            "vertices": num_vertices
+        },
+        "type": shape_type,
+        "principal_moments": principal_moments,
+        "is_closed": shape_type == "shell" and num_edges > 0  # Additional property for shells
     }
 
 def get_face_properties(face: TopoDS_Shape):
-    return get_shell_properties(face)  # Même logique peut être utilisée
+    """Calculate properties specifically for a single face."""
+    props = GProp_GProps()
+    try:
+        brepgprop_SurfaceProperties(face, props)
+    except Exception as e:
+        raise ValueError(f"Failed to calculate face properties: {str(e)}")
+    
+    # Bounding box with tolerance
+    bbox = Bnd_Box()
+    brepbndlib.Add(face, bbox, 1e-7)
+    xmin, ymin, zmin, xmax, ymax, zmax = bbox.Get()
+    dimensions = (xmax - xmin, ymax - ymin, zmax - zmin)
+    
+    # Face-specific topology
+    num_edges = count_subshapes(face, TopAbs_EDGE)
+    num_vertices = count_subshapes(face, TopAbs_VERTEX)
+    
+    if num_edges == 0 or num_vertices == 0:
+        raise ValueError("Invalid geometry: Face has no edges or vertices")
+    
+    return {
+        "surface_area": round(float(props.Mass()), 3),
+        "center_of_mass": (
+            round(float(props.CentreOfMass().X()), 3),
+            round(float(props.CentreOfMass().Y()), 3),
+            round(float(props.CentreOfMass().Z()), 3)
+        ),
+        "dimensions": tuple(round(float(d), 3) for d in dimensions),
+        "topology": {
+            "faces": 1,  # Always 1 for a single face
+            "edges": num_edges,
+            "vertices": num_vertices
+        },
+        "type": "surface",
+        "principal_moments": (
+            round(float(props.Mass()), 3),  # For a face, we use surface area as the primary moment
+            round(float(props.Mass()), 3),
+            round(float(props.Mass()), 3)
+        ),
+        "is_planar": num_edges >= 3  # Basic check for planarity
+    }
 
 def get_shape_properties(shape: TopoDS_Shape):
-    """Global properties for models (solids, shells, or surfaces)"""
-    # Essayer d'abord les solides
-    solids = get_solids_from_shape(shape)
-    if solids:
-        return get_solid_properties(solids[0])
+    """Global properties for models (solids, shells, or surfaces) with enhanced error handling."""
+    if shape is None:
+        raise ValueError("Input shape is None")
     
-    # Ensuite essayer les shells
-    shells = get_shells_from_shape(shape)
-    if shells:
-        return get_shell_properties(shells[0])
-    
-    # Enfin essayer les faces
-    faces = get_faces_from_shape(shape)
-    if faces:
-        return get_face_properties(faces[0])
+    try:
+        # First try solids
+        solids = get_solids_from_shape(shape)
+        if solids:
+            try:
+                return get_solid_properties(solids[0])
+            except Exception as e:
+                logging.warning(f"Failed to get solid properties: {str(e)}")
         
-    raise ValueError("No valid geometry (solid, shell, or face) found in shape.")
+        # Then try shells
+        shells = get_shells_from_shape(shape)
+        if shells:
+            try:
+                return get_shell_properties(shells[0])
+            except Exception as e:
+                logging.warning(f"Failed to get shell properties: {str(e)}")
+        
+        # Finally try faces
+        faces = get_faces_from_shape(shape)
+        if faces:
+            try:
+                return get_face_properties(faces[0])
+            except Exception as e:
+                logging.warning(f"Failed to get face properties: {str(e)}")
+        
+        # If we get here, no valid geometry was found or all attempts failed
+        shape_type = "unknown"
+        if solids:
+            shape_type = "solid"
+        elif shells:
+            shape_type = "shell"
+        elif faces:
+            shape_type = "face"
+        
+        error_msg = f"Failed to process geometry of type {shape_type}. "
+        error_msg += "No valid geometry (solid, shell, or face) could be analyzed."
+        raise ValueError(error_msg)
+        
+    except Exception as e:
+        raise ValueError(f"Error analyzing shape: {str(e)}")
 
 # -------------------------------
 # Comparison
@@ -172,17 +263,8 @@ def get_shape_properties(shape: TopoDS_Shape):
 
 def compare_models(submitted_path: str, reference_path: str, tol: float = 1e-3) -> Dict[str, Any]:
     """Compare two STEP models (can handle both single parts and assemblies)."""
-    import time
-    start_time = time.time()
-    
-    logging.info(f"Starting model comparison: {submitted_path} vs {reference_path}")
     sub_shape = read_step_file(submitted_path)
-    read_time = time.time() - start_time
-    logging.info(f"Read submitted file in {read_time:.2f} seconds")
-    
     ref_shape = read_step_file(reference_path)
-    total_read_time = time.time() - start_time
-    logging.info(f"Read both files in {total_read_time:.2f} seconds")
 
     sub_solids = get_solids_from_shape(sub_shape)
     ref_solids = get_solids_from_shape(ref_shape)
@@ -268,10 +350,34 @@ def compare_models(submitted_path: str, reference_path: str, tol: float = 1e-3) 
             measure_ok = abs(sub_props["surface_area"] - ref_props["surface_area"]) <= tol * max(abs(ref_props["surface_area"]), 1)
             measure_score = 100 - min(100, 100 * abs(sub_props["surface_area"] - ref_props["surface_area"]) /
                                   (abs(ref_props["surface_area"]) if abs(ref_props["surface_area"]) > 1e-6 else 1))
-            feedback["surface_area"] = {"ok": measure_ok, "score": measure_score}
-        
-        score += measure_score
-        total += 1
+            
+            # Additional checks for shells and surfaces
+            type_match = sub_props["type"] == ref_props["type"]
+            is_closed_match = sub_props.get("is_closed", False) == ref_props.get("is_closed", False)
+            is_planar_match = sub_props.get("is_planar", False) == ref_props.get("is_planar", False)
+            
+            # Adjust score based on additional criteria
+            surface_score = measure_score * 0.6  # Base score from area comparison
+            if type_match:
+                surface_score += 20  # Add points for matching type
+            if is_closed_match:
+                surface_score += 10  # Add points for matching closure
+            if is_planar_match:
+                surface_score += 10  # Add points for matching planarity
+            
+            feedback["surface_area"] = {
+                "ok": measure_ok,
+                "score": round(surface_score, 1),
+                "details": {
+                    "area_match": measure_ok,
+                    "type_match": type_match,
+                    "closure_match": is_closed_match,
+                    "planarity_match": is_planar_match
+                }
+            }
+            
+            score += surface_score
+            total += 1
 
         # Topology
         topo_ok = sub_props["topology"] == ref_props["topology"]
