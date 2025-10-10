@@ -71,18 +71,9 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=[
-        "Content-Type", 
-        "Authorization",
-        "Accept",
-        "Origin",
-        "X-Requested-With",
-        "Access-Control-Request-Method",
-        "Access-Control-Request-Headers"
-    ],
-    expose_headers=["*"],
-    max_age=3600  # Cache CORS pre-flight response for 1 hour
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=["*"]
 )
 
 # Setup CORS and security
@@ -1030,31 +1021,74 @@ async def submit_exercise(
         (level == "intermediate" and order == 18)
     )
     if special_manual:
+        logger.info(f"Processing manual validation exercise submission for {level} - {order}")
+        
         if ext != ".sldasm":
             raise HTTPException(status_code=400, detail="Seuls les fichiers .SLDASM sont autorisés pour cet exercice.")
-        file_id = str(uuid.uuid4())
-        path = os.path.join(UPLOAD_DIR, "assemblies", f"{file_id}_{filename}")
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "wb") as buffer:
-            buffer.write(content)
-        sub_dict = {
-            "exercise_id": exercise_id,
-            "user_id": str(current_user.get("_id", current_user.get("id"))),
-            "file_name": filename,
-            "file_path": path,
-            "file_size": size,
-            "status": "pending_manual",
-            "submitted_at": datetime.utcnow(),
-            "cad_comparison": {"manual_validation": True},
-            "user_feedback": user_feedback
-        }
-        if quizAnswers:
-            try:
-                sub_dict["quiz_answers"] = json.loads(quizAnswers)
-            except Exception:
-                sub_dict["quiz_answers"] = None
-        result = await submissions_collection.insert_one(sub_dict)
-        sub_dict["_id"] = str(result.inserted_id)
+        
+        try:
+            # Save the file
+            file_id = str(uuid.uuid4())
+            path = os.path.join(UPLOAD_DIR, "assemblies", f"{file_id}_{filename}")
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "wb") as buffer:
+                buffer.write(content)
+
+            # Create submission record
+            sub_dict = {
+                "exercise_id": exercise_id,
+                "user_id": str(current_user.get("_id", current_user.get("id"))),
+                "file_name": filename,
+                "file_path": path,
+                "file_size": size,
+                "status": "pending_manual",
+                "submitted_at": datetime.utcnow(),
+                "cad_comparison": {"manual_validation": True},
+                "user_feedback": user_feedback,
+                "notification_sent": False  # Track if notification was sent
+            }
+
+            if quizAnswers:
+                try:
+                    sub_dict["quiz_answers"] = json.loads(quizAnswers)
+                except Exception:
+                    sub_dict["quiz_answers"] = None
+
+            # Save submission to database
+            result = await submissions_collection.insert_one(sub_dict)
+            sub_dict["_id"] = str(result.inserted_id)
+
+            # Send email notification
+            from utils.email_utils import send_submission_notification
+            exercise_name = f"{level.capitalize()} - Exercice {order}"
+            notification_sent = send_submission_notification(
+                exercise_name=exercise_name,
+                student_email=current_user.get("email", "unknown"),
+                submission_id=sub_dict["_id"],
+                file_path=path
+            )
+
+            # Update notification status
+            if notification_sent:
+                await submissions_collection.update_one(
+                    {"_id": result.inserted_id},
+                    {"$set": {"notification_sent": True}}
+                )
+                logger.info(f"Email notification sent for submission {sub_dict['_id']}")
+            else:
+                logger.warning(f"Failed to send email notification for submission {sub_dict['_id']}")
+                
+        except Exception as e:
+            logger.error(f"Error processing manual submission: {str(e)}")
+            if 'path' in locals() and os.path.exists(path):
+                try:
+                    os.remove(path)
+                except Exception:
+                    pass
+            raise HTTPException(
+                status_code=500,
+                detail="Une erreur est survenue lors du traitement de votre soumission"
+            )
         return {"success": True, "submission": serialize_doc(sub_dict)}
 
     # --- Generic CAD comparison for other exercises ---

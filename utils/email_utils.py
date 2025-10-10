@@ -1,6 +1,10 @@
 from sendgrid import SendGridAPIClient
-from sendgrid.helpers.mail import Mail, Email, To, Content
+from sendgrid.helpers.mail import (
+    Mail, Email, To, Content, 
+    Attachment, FileContent, FileName, FileType, Disposition
+)
 import os
+import base64
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -8,6 +12,71 @@ load_dotenv()
 SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")
 FROM_EMAIL = os.getenv("FROM_EMAIL", "mecaflowlearn@gmail.com")
 FROM_NAME = os.getenv("FROM_NAME", "MecaFlow")
+
+def send_submission_notification(exercise_name: str, student_email: str, submission_id: str, file_path: str):
+    """
+    Envoie une notification pour une nouvelle soumission d'exercice à validation manuelle.
+    Inclut le fichier soumis en pièce jointe.
+    """
+    if not SENDGRID_API_KEY:
+        print("SendGrid API key not configured, skipping email notification")
+        return False
+
+    try:
+        to_email = os.getenv("TO_EMAIL", "bouiraislam5@gmail.com")
+        
+        # Préparer l'email
+        message = Mail(
+            from_email=Email(FROM_EMAIL, FROM_NAME),
+            to_emails=To(to_email),
+            subject=f"MecaFlow - Nouvelle soumission à valider - {exercise_name}",
+            html_content=Content(
+                "text/html",
+                f"""
+                <h2>Nouvelle soumission à valider</h2>
+                <p>Une nouvelle soumission requiert votre validation :</p>
+                <ul>
+                    <li>Exercice : <strong>{exercise_name}</strong></li>
+                    <li>Étudiant : <strong>{student_email}</strong></li>
+                    <li>ID de soumission : <strong>{submission_id}</strong></li>
+                    <li>Fichier : <strong>{os.path.basename(file_path)}</strong></li>
+                </ul>
+                <p>Le fichier soumis est attaché à cet email.</p>
+                <br>
+                <p>Pour valider cette soumission, vous pouvez utiliser l'ID de soumission dans l'interface admin.</p>
+                <br>
+                <p>Cordialement,<br>{FROM_NAME}</p>
+                """
+            )
+        )
+        
+        # Ajouter le fichier en pièce jointe
+        if os.path.exists(file_path):
+            with open(file_path, 'rb') as f:
+                file_data = f.read()
+                file_name = os.path.basename(file_path)
+                encoded_file = base64.b64encode(file_data).decode()
+                attachment = Attachment()
+                attachment.file_content = FileContent(encoded_file)
+                attachment.file_name = FileName(file_name)
+                attachment.disposition = Disposition('attachment')
+                attachment.file_type = FileType('application/octet-stream')
+                
+                message.attachment = attachment
+
+        sg = SendGridAPIClient(SENDGRID_API_KEY)
+        response = sg.send(message)
+        
+        if response.status_code not in [200, 202]:
+            print(f"Error sending notification email: {response.status_code}")
+            return False
+            
+        print(f"Notification email sent successfully")
+        return True
+
+    except Exception as e:
+        print(f"Error sending notification email: {str(e)}")
+        return False
 
 def send_verification_code(email: str, code: str):
     if not SENDGRID_API_KEY:
