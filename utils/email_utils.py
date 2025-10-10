@@ -1,139 +1,67 @@
-import os
-import base64
-import logging
-from typing import Optional, Dict, Any
-from dataclasses import dataclass
 from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import (
     Mail, Email, To, Content,
     Attachment, FileContent, FileName, FileType, Disposition
 )
+import os
+import base64
 from dotenv import load_dotenv
-
-# Configure logging
-logger = logging.getLogger(__name__)
 
 load_dotenv()
 
-# Configuration
 SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")
 FROM_EMAIL = os.getenv("FROM_EMAIL", "mecaflowlearn@gmail.com")
 FROM_NAME = os.getenv("FROM_NAME", "MecaFlow")
 TO_EMAIL = os.getenv("TO_EMAIL", "bouiraislam5@gmail.com")
 
-@dataclass
-class EmailError:
-    """Structure for email errors"""
-    code: str
-    message: str
-    details: Optional[Dict[str, Any]] = None
+def send_verification_code(email: str, code: str):
+    if not SENDGRID_API_KEY:
+        raise ValueError("SendGrid API key not configured")
 
-class EmailService:
-    """Service class to handle all email operations"""
-    
-    def __init__(self):
-        if not SENDGRID_API_KEY:
-            raise ValueError("SendGrid API key not configured")
-        self.client = SendGridAPIClient(SENDGRID_API_KEY)
-        self.from_email = Email(FROM_EMAIL, FROM_NAME)
-        
-    def _create_attachment(self, file_path: str) -> Optional[Attachment]:
-        """Create an email attachment from a file"""
-        try:
-            if not os.path.exists(file_path):
-                logger.warning(f"Attachment file not found: {file_path}")
-                return None
-                
-            with open(file_path, 'rb') as f:
-                file_content = f.read()
-                encoded_file = base64.b64encode(file_content).decode()
-                
-            attachment = Attachment()
-            attachment.file_content = FileContent(encoded_file)
-            attachment.file_name = FileName(os.path.basename(file_path))
-            attachment.disposition = Disposition('attachment')
-            attachment.file_type = FileType('application/octet-stream')
-            return attachment
-            
-        except Exception as e:
-            logger.error(f"Error creating attachment: {str(e)}")
-            return None
-    
-    def send_email(self, to_email: str, subject: str, html_content: str, 
-                  attachment_path: Optional[str] = None) -> tuple[bool, Optional[EmailError]]:
-        """
-        Send an email with optional attachment
-        Returns (success, error)
-        """
-        try:
-            message = Mail(
-                from_email=self.from_email,
-                to_emails=To(to_email),
-                subject=subject,
-                html_content=Content("text/html", html_content)
+    try:
+        # Create message
+        message = Mail(
+            from_email=Email(FROM_EMAIL, FROM_NAME),
+            to_emails=To(email),
+            subject="MecaFlow - Code de vérification",
+            html_content=Content(
+                "text/html",
+                f"""
+                <h2>Bienvenue sur MecaFlow Learn!</h2>
+                <p>Votre code de vérification est : <strong>{code}</strong></p>
+                <p>Ce code expirera dans 10 minutes.</p>
+                <br>
+                <p>Cordialement,<br>L'équipe MecaFlow</p>
+                """
             )
-            
-            if attachment_path:
-                attachment = self._create_attachment(attachment_path)
-                if attachment:
-                    message.attachment = attachment
-            
-            logger.info(f"Sending email to {to_email}")
-            response = self.client.send(message)
-            
-            if response.status_code not in [200, 202]:
-                error = EmailError(
-                    code="SEND_FAILED",
-                    message=f"Failed to send email. Status: {response.status_code}",
-                    details={"status_code": response.status_code}
-                )
-                logger.error(f"Email send failed: {error.message}")
-                return False, error
-                
-            logger.info(f"Email sent successfully to {to_email}")
-            return True, None
-            
-        except Exception as e:
-            error = EmailError(
-                code="SEND_ERROR",
-                message=str(e),
-                details={"error_type": type(e).__name__}
-            )
-            logger.error(f"Error sending email: {error.message}", exc_info=True)
-            return False, error
+        )
 
-# Initialize global email service
-_email_service = None
-
-def get_email_service() -> EmailService:
-    """Get or create the email service singleton"""
-    global _email_service
-    if _email_service is None:
-        _email_service = EmailService()
-    return _email_service
-
-def send_verification_code(email: str, code: str) -> bool:
-    """Send a verification code email"""
-    html_content = f"""
-    <h2>Bienvenue sur MecaFlow Learn!</h2>
-    <p>Votre code de vérification est : <strong>{code}</strong></p>
-    <p>Ce code expirera dans 10 minutes.</p>
-    <br>
-    <p>Cordialement,<br>L'équipe MecaFlow</p>
-    """
-    
-    success, error = get_email_service().send_email(
-        to_email=email,
-        subject="MecaFlow - Code de vérification",
-        html_content=html_content
-    )
-    
-    if not success:
-        logger.error(f"Failed to send verification code: {error.message if error else 'Unknown error'}")
+        # Send via SendGrid API
+        sg = SendGridAPIClient(SENDGRID_API_KEY)
+        print(f"Attempting to send email with API key: {SENDGRID_API_KEY[:10]}...")
+        response = sg.send(message)
         
-    return success
+        if response.status_code == 403:
+            print("403 Forbidden - Please check: ")
+            print("1. API key has 'Mail Send' permission")
+            print("2. Sender email is verified")
+            print("3. API key is valid and not revoked")
+            raise ValueError("SendGrid authentication failed - check API key permissions")
+            
+        if response.status_code not in [200, 202]:
+            raise ValueError(f"SendGrid API error: {response.status_code}")
+            
+        print(f"Email sent successfully. Status code: {response.status_code}")
+        return True
 
-def send_submission_notification(exercise_name: str, student_email: str, submission_id: str, file_path: str) -> bool:
+    except Exception as e:
+        error_msg = str(e)
+        if "403" in error_msg:
+            print("Authentication failed with SendGrid API")
+        print(f"Error sending email: {error_msg}")
+        raise ValueError(f"Failed to send email: {error_msg}")
+
+def send_submission_notification(exercise_name: str, student_email: str, submission_id: str, file_path: str):
     """Send notification for manual validation submission"""
     if not SENDGRID_API_KEY:
         raise ValueError("SendGrid API key not configured")
@@ -164,7 +92,7 @@ def send_submission_notification(exercise_name: str, student_email: str, submiss
             )
         )
 
-        # Add attachment
+        # Add attachment if file exists
         if os.path.exists(file_path):
             with open(file_path, 'rb') as f:
                 file_content = f.read()
@@ -176,10 +104,13 @@ def send_submission_notification(exercise_name: str, student_email: str, submiss
             attachment.disposition = Disposition('attachment')
             attachment.file_type = FileType('application/octet-stream')
             message.attachment = attachment
+            print(f"File attached: {os.path.basename(file_path)}")
+        else:
+            print(f"Warning: File not found at {file_path}")
 
         # Send via SendGrid API
         sg = SendGridAPIClient(SENDGRID_API_KEY)
-        print(f"Attempting to send email to {TO_EMAIL} with API key: {SENDGRID_API_KEY[:10]}...")
+        print(f"Attempting to send notification to {TO_EMAIL}...")
         response = sg.send(message)
         
         if response.status_code == 403:
@@ -192,12 +123,12 @@ def send_submission_notification(exercise_name: str, student_email: str, submiss
         if response.status_code not in [200, 202]:
             raise ValueError(f"SendGrid API error: {response.status_code}")
             
-        print(f"Email sent successfully. Status code: {response.status_code}")
+        print(f"Notification email sent successfully. Status code: {response.status_code}")
         return True
 
     except Exception as e:
         error_msg = str(e)
         if "403" in error_msg:
             print("Authentication failed with SendGrid API")
-        print(f"Error sending email: {error_msg}")
-        raise ValueError(f"Failed to send email: {error_msg}")
+        print(f"Error sending notification email: {error_msg}")
+        raise ValueError(f"Failed to send notification email: {error_msg}")
