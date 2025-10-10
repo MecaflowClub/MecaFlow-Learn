@@ -1044,8 +1044,33 @@ async def submit_exercise(
                 sub_dict["quiz_answers"] = json.loads(quizAnswers)
             except Exception:
                 sub_dict["quiz_answers"] = None
+                
         result = await submissions_collection.insert_one(sub_dict)
         sub_dict["_id"] = str(result.inserted_id)
+
+        # Send email notification for manual validation
+        try:
+            from utils.email_utils import send_submission_notification
+            
+            # Get exercise name from level and order
+            exercise_name = f"{level.capitalize()} - Exercice {order}"
+            
+            # Send notification
+            email_sent = send_submission_notification(
+                exercise_name=exercise_name,
+                student_email=current_user.get("email"),
+                submission_id=str(result.inserted_id),
+                file_path=path
+            )
+            
+            if email_sent:
+                logger.info(f"Email notification sent for submission {result.inserted_id}")
+            else:
+                logger.error(f"Failed to send email notification for submission {result.inserted_id}")
+                
+        except Exception as e:
+            logger.error(f"Error sending email notification: {str(e)}")
+            
         return {"success": True, "submission": serialize_doc(sub_dict)}
 
     # --- Generic CAD comparison for other exercises ---
