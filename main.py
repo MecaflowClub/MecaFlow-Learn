@@ -1017,12 +1017,17 @@ async def submit_exercise(
 
     # --- Special case: manual validation exercises ---
     special_manual = (
-        (level == "advanced" and order in [13, 14]) or
+        (level == "advanced" and order in [6, 7, 13, 14]) or
         (level == "intermediate" and order == 18)
     )
     if special_manual:
-        if ext != ".sldasm":
-            raise HTTPException(status_code=400, detail="Seuls les fichiers .SLDASM sont autorisés pour cet exercice.")
+        # Vérifier l'extension selon l'exercice
+        if level == "advanced" and order in [6, 7]:
+            if ext != ".sldprt":
+                raise HTTPException(status_code=400, detail="Seuls les fichiers .SLDPRT sont autorisés pour cet exercice.")
+        else:
+            if ext != ".sldasm":
+                raise HTTPException(status_code=400, detail="Seuls les fichiers .SLDASM sont autorisés pour cet exercice.")
         file_id = str(uuid.uuid4())
         path = os.path.join(UPLOAD_DIR, "assemblies", f"{file_id}_{filename}")
         os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -1101,6 +1106,37 @@ async def submit_exercise(
     try:
         # Import OpenCascade functions first
         from services.occComparison import compare_models, get_solids_from_shape, read_step_file
+        
+        # Build submission dict first for error cases
+        sub_dict = {
+            "exercise_id": exercise_id,
+            "user_id": str(current_user.get("_id", current_user.get("id"))),
+            "file_name": filename,
+            "file_path": path,
+            "file_size": size,
+            "status": "pending",
+            "submitted_at": datetime.utcnow()
+        }
+        
+        # Convert SLDPRT to STEP if necessary
+        if ext.lower() == '.sldprt':
+            try:
+                from services.fileConversion import convert_sldprt_to_step
+                step_path = path.replace('.sldprt', '.step')
+                convert_success = convert_sldprt_to_step(path, step_path)
+                if convert_success:
+                    logger.info(f"Successfully converted {path} to {step_path}")
+                    path = step_path
+                else:
+                    logger.error("Failed to convert SLDPRT to STEP format")
+                    sub_dict["error"] = "Failed to convert SLDPRT file"
+                    sub_dict["status"] = "error"
+                    return {"success": True, "submission": serialize_doc(sub_dict)}
+            except Exception as e:
+                logger.error(f"Error converting SLDPRT to STEP: {str(e)}")
+                sub_dict["error"] = f"Failed to process SLDPRT file: {str(e)}"
+                sub_dict["status"] = "error"
+                return {"success": True, "submission": serialize_doc(sub_dict)}
         
         # Get reference file path from exercise
         reference_path = ex.get("solution_file_path")
