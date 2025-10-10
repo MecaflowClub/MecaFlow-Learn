@@ -8,6 +8,9 @@ from OCC.Core.TopoDS import topods, TopoDS_Shape
 from OCC.Core.BRepBndLib import brepbndlib
 from OCC.Core.Bnd import Bnd_Box
 import numpy as np
+import logging
+
+logger = logging.getLogger(__name__)
 
 # -------------------------------
 # STEP file utilities
@@ -333,111 +336,91 @@ def compare_models(submitted_path: str, reference_path: str, tol: float = 1e-3) 
         feedback["success"] = global_score >= 80
         return feedback
 
-# -------------------------------
-# Shell comparison
-# -------------------------------
-
 def compare_shell_models(submitted_path: str, reference_path: str, tol: float = 1e-3) -> Dict[str, Any]:
     """
-    Specialized function for comparing shell/surface models with appropriate metrics.
+    Compare two STEP models that are expected to be shells or surfaces.
+    Provides specialized comparison metrics for shell/surface models.
+    
+    Args:
+        submitted_path: Path to the submitted STEP file
+        reference_path: Path to the reference STEP file
+        tol: Tolerance for comparisons (default: 1e-3)
+        
+    Returns:
+        Dict containing comparison results and feedback
     """
     try:
-        # Read the STEP files
+        logger.info(f"Starting shell comparison: {submitted_path} vs {reference_path}")
+        
+        # Read files and extract shells
         sub_shape = read_step_file(submitted_path)
         ref_shape = read_step_file(reference_path)
-
-        # Get shells from shapes
-        sub_shells = get_shells_from_shape(sub_shape)
-        ref_shells = get_shells_from_shape(ref_shape)
-
-        # If no shells found, try faces
+        
+        # Get shells or faces from shapes
+        sub_shells = get_shells_from_shape(sub_shape) or [s for s in get_faces_from_shape(sub_shape)]
+        ref_shells = get_shells_from_shape(ref_shape) or [s for s in get_faces_from_shape(ref_shape)]
+        
         if not sub_shells:
-            faces = get_faces_from_shape(sub_shape)
-            if faces:
-                sub_shells = [faces[0]]
+            logger.error(f"No shells or faces found in submitted file: {submitted_path}")
+            return {"success": False, "error": "Aucune surface ou coque trouvée dans le fichier soumis"}
+            
         if not ref_shells:
-            faces = get_faces_from_shape(ref_shape)
-            if faces:
-                ref_shells = [faces[0]]
-
-        if not sub_shells or not ref_shells:
-            return {
-                "success": False,
-                "error": "No valid shells or faces found in one or both models"
-            }
-
-        # For now, we'll just compare the first shell from each
+            logger.error(f"No shells or faces found in reference file: {reference_path}")
+            return {"success": False, "error": "Aucune surface ou coque trouvée dans le fichier de référence"}
+        
+        # Compare properties with more lenient tolerances for shells
         sub_props = get_shell_properties(sub_shells[0])
         ref_props = get_shell_properties(ref_shells[0])
-
-        # Initialize feedback
+        
         feedback = {}
         score = 0
         total = 0
-
-        # Surface area comparison - more lenient for shells
-        shell_tol = tol * 2.0
+        
+        # Surface area comparison (most important for shells)
+        shell_tol = tol * 2.0  # Double tolerance for shells
         area_diff = abs(sub_props["surface_area"] - ref_props["surface_area"])
         area_ok = area_diff <= shell_tol * max(abs(ref_props["surface_area"]), 1)
-        area_score = 100 - min(100, 100 * area_diff /
-                            (abs(ref_props["surface_area"]) if abs(ref_props["surface_area"]) > 1e-6 else 1))
-
+        area_score = 100 - min(100, 100 * area_diff / max(abs(ref_props["surface_area"]), 1e-6))
+        
         feedback["surface_area"] = {
             "ok": area_ok,
             "score": round(area_score, 1),
-            "submitted": sub_props["surface_area"],
-            "reference": ref_props["surface_area"]
+            "submitted": round(sub_props["surface_area"], 3),
+            "reference": round(ref_props["surface_area"], 3),
+            "difference": round(area_diff, 3)
         }
         score += area_score
         total += 1
-
-        # Topology comparison with more tolerance
-        def topology_similarity(t1, t2, max_diff: int = 4) -> float:
-            diffs = [abs(t1[k] - t2[k]) for k in ["faces", "edges", "vertices"]]
-            total_diff = sum(diffs)
-            if total_diff <= max_diff:
-                return 100 - (total_diff * (100 / (max_diff * 2)))
-            return 0
-
-        topo_score = topology_similarity(sub_props["topology"], ref_props["topology"])
+        
+        # Topology comparison with lenient threshold
+        topo_diffs = {k: abs(sub_props["topology"][k] - ref_props["topology"][k])
+                     for k in ["faces", "edges", "vertices"]}
+        max_allowed_diff = 4  # Allow some topology differences
+        total_diff = sum(topo_diffs.values())
+        
+        topo_score = 100 if total_diff == 0 else \
+                    80 if total_diff <= max_allowed_diff else \
+                    max(0, 60 - (total_diff - max_allowed_diff) * 10)
+                    
         feedback["topology"] = {
-            "ok": topo_score > 50,
+            "ok": topo_score >= 60,
             "score": round(topo_score, 1),
-            "submitted": sub_props["topology"],
-            "reference": ref_props["topology"]
+            "differences": topo_diffs
         }
         score += topo_score
         total += 1
-
-        # Dimension ratios (to handle scaling differences)
-        def calc_dim_ratios(dims):
-            max_dim = max(dims)
-            if max_dim > 1e-6:
-                return [d/max_dim for d in dims]
-            return dims
-
-        sub_ratios = calc_dim_ratios(sub_props["dimensions"])
-        ref_ratios = calc_dim_ratios(ref_props["dimensions"])
         
-        dims_diff = sum(abs(s - r) for s, r in zip(sub_ratios, ref_ratios))
-        dims_score = 100 - min(100, dims_diff * 100)
-        
-        feedback["dimensions"] = {
-            "ok": dims_score > 80,
-            "score": round(dims_score, 1)
-        }
-        score += dims_score
-        total += 1
-
-        # Calculate global score
+        # Global score calculation
         global_score = round(score / total, 1)
         feedback["global_score"] = global_score
         feedback["success"] = global_score >= 80
         
+        logger.info(f"Shell comparison complete - Score: {global_score}")
         return feedback
-
+        
     except Exception as e:
+        logger.error(f"Error in shell comparison: {str(e)}", exc_info=True)
         return {
             "success": False,
-            "error": str(e)
+            "error": f"Erreur lors de la comparaison: {str(e)}"
         }

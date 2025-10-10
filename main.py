@@ -1078,7 +1078,11 @@ async def submit_exercise(
                 if level == "advanced" and order in [2, 15, 16, 17]:  # Exercice 2 (bouteille) + exercices de surfacing
                     from services.occComparison import compare_shell_models
                     logger.info("Comparing shell/surface models...")
-                    cad_result = compare_shell_models(path, reference_path)
+                    try:
+                        cad_result = compare_shell_models(path, reference_path)
+                    except Exception as e:
+                        logger.error(f"Error in shell comparison: {str(e)}", exc_info=True)
+                        cad_result = {"success": False, "error": f"Erreur lors de la comparaison : {str(e)}"}
                 else:
                     # Lire et analyser le fichier soumis pour les pièces solides
                     sub_shape = read_step_file(path)
