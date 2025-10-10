@@ -8,9 +8,6 @@ from OCC.Core.TopoDS import topods, TopoDS_Shape
 from OCC.Core.BRepBndLib import brepbndlib
 from OCC.Core.Bnd import Bnd_Box
 import numpy as np
-import logging
-
-logger = logging.getLogger(__name__)
 
 # -------------------------------
 # STEP file utilities
@@ -338,89 +335,17 @@ def compare_models(submitted_path: str, reference_path: str, tol: float = 1e-3) 
 
 def compare_shell_models(submitted_path: str, reference_path: str, tol: float = 1e-3) -> Dict[str, Any]:
     """
-    Compare two STEP models that are expected to be shells or surfaces.
-    Provides specialized comparison metrics for shell/surface models.
-    
-    Args:
-        submitted_path: Path to the submitted STEP file
-        reference_path: Path to the reference STEP file
-        tol: Tolerance for comparisons (default: 1e-3)
-        
-    Returns:
-        Dict containing comparison results and feedback
+    Compare two STEP models that are shells or surfaces.
     """
     try:
-        logger.info(f"Starting shell comparison: {submitted_path} vs {reference_path}")
-        
-        # Read files and extract shells
+        # Read the files
         sub_shape = read_step_file(submitted_path)
         ref_shape = read_step_file(reference_path)
-        
-        # Get shells or faces from shapes
-        sub_shells = get_shells_from_shape(sub_shape) or [s for s in get_faces_from_shape(sub_shape)]
-        ref_shells = get_shells_from_shape(ref_shape) or [s for s in get_faces_from_shape(ref_shape)]
-        
-        if not sub_shells:
-            logger.error(f"No shells or faces found in submitted file: {submitted_path}")
-            return {"success": False, "error": "Aucune surface ou coque trouvée dans le fichier soumis"}
-            
-        if not ref_shells:
-            logger.error(f"No shells or faces found in reference file: {reference_path}")
-            return {"success": False, "error": "Aucune surface ou coque trouvée dans le fichier de référence"}
-        
-        # Compare properties with more lenient tolerances for shells
-        sub_props = get_shell_properties(sub_shells[0])
-        ref_props = get_shell_properties(ref_shells[0])
-        
-        feedback = {}
-        score = 0
-        total = 0
-        
-        # Surface area comparison (most important for shells)
-        shell_tol = tol * 2.0  # Double tolerance for shells
-        area_diff = abs(sub_props["surface_area"] - ref_props["surface_area"])
-        area_ok = area_diff <= shell_tol * max(abs(ref_props["surface_area"]), 1)
-        area_score = 100 - min(100, 100 * area_diff / max(abs(ref_props["surface_area"]), 1e-6))
-        
-        feedback["surface_area"] = {
-            "ok": area_ok,
-            "score": round(area_score, 1),
-            "submitted": round(sub_props["surface_area"], 3),
-            "reference": round(ref_props["surface_area"], 3),
-            "difference": round(area_diff, 3)
-        }
-        score += area_score
-        total += 1
-        
-        # Topology comparison with lenient threshold
-        topo_diffs = {k: abs(sub_props["topology"][k] - ref_props["topology"][k])
-                     for k in ["faces", "edges", "vertices"]}
-        max_allowed_diff = 4  # Allow some topology differences
-        total_diff = sum(topo_diffs.values())
-        
-        topo_score = 100 if total_diff == 0 else \
-                    80 if total_diff <= max_allowed_diff else \
-                    max(0, 60 - (total_diff - max_allowed_diff) * 10)
-                    
-        feedback["topology"] = {
-            "ok": topo_score >= 60,
-            "score": round(topo_score, 1),
-            "differences": topo_diffs
-        }
-        score += topo_score
-        total += 1
-        
-        # Global score calculation
-        global_score = round(score / total, 1)
-        feedback["global_score"] = global_score
-        feedback["success"] = global_score >= 80
-        
-        logger.info(f"Shell comparison complete - Score: {global_score}")
-        return feedback
-        
+
+        # Compare as normal parts, but with shell-specific tolerances
+        return compare_models(submitted_path, reference_path, tol * 2.0)
     except Exception as e:
-        logger.error(f"Error in shell comparison: {str(e)}", exc_info=True)
         return {
             "success": False,
-            "error": f"Erreur lors de la comparaison: {str(e)}"
+            "error": f"Erreur lors de la comparaison des surfaces: {str(e)}"
         }

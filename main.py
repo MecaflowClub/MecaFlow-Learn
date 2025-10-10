@@ -1016,11 +1016,15 @@ async def submit_exercise(
         return {"success": True, "submission": serialize_doc(sub_dict)}
 
     # --- Special case: manual validation exercises ---
-    special_manual = (
-        (level == "advanced" and order in [13, 14]) or
-        (level == "intermediate" and order == 18)
-    )
-    if special_manual:
+    # Define exercise types
+    validation_types = {
+        "manual": (level == "advanced" and order in [13, 14]) or  # Assemblages complexes
+                 (level == "intermediate" and order == 18),  # Validation manuelle spécifique
+        "shell": level == "advanced" and order in [2, 15, 16, 17],  # Exercices de surfaces
+        "assembly": level == "advanced" and order in [8, 9, 10, 11, 12]  # Exercices d'assemblage standard
+    }
+    
+    if validation_types["manual"]:  # Uniquement pour les exercices vraiment manuels
         if ext != ".sldasm":
             raise HTTPException(status_code=400, detail="Seuls les fichiers .SLDASM sont autorisés pour cet exercice.")
         file_id = str(uuid.uuid4())
@@ -1075,14 +1079,18 @@ async def submit_exercise(
         else:
 
                 # Pour les exercices spécifiques (surfacing et shell)
-                if level == "advanced" and order in [2, 15, 16, 17]:  # Exercice 2 (bouteille) + exercices de surfacing
+                if validation_types["shell"]:
                     from services.occComparison import compare_shell_models
                     logger.info("Comparing shell/surface models...")
                     try:
                         cad_result = compare_shell_models(path, reference_path)
+                        logger.info(f"Shell comparison result: {cad_result}")
                     except Exception as e:
-                        logger.error(f"Error in shell comparison: {str(e)}", exc_info=True)
-                        cad_result = {"success": False, "error": f"Erreur lors de la comparaison : {str(e)}"}
+                        logger.error(f"Shell comparison error: {str(e)}")
+                        cad_result = {
+                            "success": False,
+                            "error": f"Erreur lors de la comparaison des surfaces: {str(e)}"
+                        }
                 else:
                     # Lire et analyser le fichier soumis pour les pièces solides
                     sub_shape = read_step_file(path)
