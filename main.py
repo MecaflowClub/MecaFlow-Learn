@@ -88,6 +88,35 @@ logging.basicConfig(
 )
 logger = logging.getLogger("cad-platform")
 
+# Route de test pour l'envoi d'email
+@app.get("/api/test-email")
+async def test_email():
+    """Route de test pour vérifier la configuration email."""
+    try:
+        from utils.email_utils import send_submission_notification
+        # Créer un fichier test
+        test_file = os.path.join(UPLOAD_DIR, "test_file.txt")
+        with open(test_file, "w") as f:
+            f.write("Ceci est un fichier test")
+            
+        result = send_submission_notification(
+            exercise_name="Test Exercise",
+            student_email="test@test.com",
+            submission_id="test-123",
+            file_path=test_file
+        )
+        
+        return {
+            "success": result,
+            "message": "Email de test envoyé avec succès" if result else "Échec de l'envoi de l'email"
+        }
+    except Exception as e:
+        logger.error(f"Erreur lors du test d'envoi d'email: {str(e)}")
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
 security = HTTPBearer()
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)

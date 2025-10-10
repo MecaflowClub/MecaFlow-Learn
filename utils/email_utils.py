@@ -18,12 +18,20 @@ def send_submission_notification(exercise_name: str, student_email: str, submiss
     Envoie une notification pour une nouvelle soumission d'exercice à validation manuelle.
     Inclut le fichier soumis en pièce jointe.
     """
+    print("Starting email notification process...")
+    print(f"SENDGRID_API_KEY starts with: {SENDGRID_API_KEY[:10] if SENDGRID_API_KEY else 'Not configured'}")
+    print(f"FROM_EMAIL: {FROM_EMAIL}")
+    print(f"FROM_NAME: {FROM_NAME}")
+    
     if not SENDGRID_API_KEY:
         print("SendGrid API key not configured, skipping email notification")
         return False
 
     try:
         to_email = os.getenv("TO_EMAIL", "bouiraislam5@gmail.com")
+        print(f"Sending email to: {to_email}")
+        print(f"File path to attach: {file_path}")
+        print(f"File exists: {os.path.exists(file_path)}")
         
         # Préparer l'email
         message = Mail(
@@ -64,18 +72,25 @@ def send_submission_notification(exercise_name: str, student_email: str, submiss
                 
                 message.attachment = attachment
 
+        print("Creating SendGrid client...")
         sg = SendGridAPIClient(SENDGRID_API_KEY)
+        print("Attempting to send email...")
         response = sg.send(message)
         
         if response.status_code not in [200, 202]:
-            print(f"Error sending notification email: {response.status_code}")
+            print(f"Error sending notification email: Status code {response.status_code}")
+            print(f"Response headers: {response.headers}")
+            print(f"Response body: {response.body}")
             return False
             
-        print(f"Notification email sent successfully")
+        print(f"Notification email sent successfully! Status code: {response.status_code}")
         return True
 
     except Exception as e:
-        print(f"Error sending notification email: {str(e)}")
+        print(f"Exception sending notification email: {str(e)}")
+        print(f"Exception type: {type(e)}")
+        import traceback
+        print(f"Traceback: {traceback.format_exc()}")
         return False
 
 def send_verification_code(email: str, code: str):
