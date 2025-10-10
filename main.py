@@ -1055,12 +1055,23 @@ async def submit_exercise(
             # Get exercise name from level and order
             exercise_name = f"{level.capitalize()} - Exercice {order}"
             
-            # Send notification
+            # Calculate QCM score if quiz answers exist
+            qcm_score = None
+            if quizAnswers:
+                try:
+                    quiz_answers = json.loads(quizAnswers)
+                    qcm = ex.get("qcm", [])
+                    qcm_score, _, _ = calculate_qcm_score(quiz_answers, qcm)
+                except Exception as e:
+                    logger.error(f"Error calculating QCM score: {str(e)}")
+            
+            # Send notification with QCM score
             email_sent = send_submission_notification(
                 exercise_name=exercise_name,
                 student_email=current_user.get("email"),
                 submission_id=str(result.inserted_id),
-                file_path=path
+                file_path=path,
+                qcm_score=qcm_score
             )
             
             if email_sent:

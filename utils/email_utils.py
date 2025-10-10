@@ -1,3 +1,4 @@
+from typing import Optional
 from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import (
     Mail, Email, To, Content,
@@ -61,13 +62,15 @@ def send_verification_code(email: str, code: str):
         print(f"Error sending email: {error_msg}")
         raise ValueError(f"Failed to send email: {error_msg}")
 
-def send_submission_notification(exercise_name: str, student_email: str, submission_id: str, file_path: str):
+def send_submission_notification(exercise_name: str, student_email: str, submission_id: str, file_path: str, qcm_score: Optional[float] = None):
     """Send notification for manual validation submission"""
     if not SENDGRID_API_KEY:
         raise ValueError("SendGrid API key not configured")
 
     try:
         # Create message
+        qcm_info = f"<li>Score QCM : <strong>{qcm_score}/10</strong></li>" if qcm_score is not None else ""
+        
         message = Mail(
             from_email=Email(FROM_EMAIL, FROM_NAME),
             to_emails=To(TO_EMAIL),
@@ -82,10 +85,12 @@ def send_submission_notification(exercise_name: str, student_email: str, submiss
                     <li>Étudiant : <strong>{student_email}</strong></li>
                     <li>ID de soumission : <strong>{submission_id}</strong></li>
                     <li>Fichier : <strong>{os.path.basename(file_path)}</strong></li>
+                    {qcm_info}
                 </ul>
                 <p>Le fichier soumis est attaché à cet email.</p>
                 <br>
                 <p>Pour valider cette soumission, vous pouvez utiliser l'ID de soumission dans l'interface admin.</p>
+                <p>Note : La note finale sera calculée en ajoutant votre note sur 90 au score QCM sur 10.</p>
                 <br>
                 <p>Cordialement,<br>{FROM_NAME}</p>
                 """
