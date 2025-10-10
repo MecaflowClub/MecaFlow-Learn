@@ -2,7 +2,7 @@ from typing import Optional
 from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import (
     Mail, Email, To, Content,
-    Attachment, FileContent, FileName, FileType, Disposition
+    Attachment, FileContent, FileName, FileType, Disposition, ContentId
 )
 import os
 import base64
@@ -69,46 +69,43 @@ def send_submission_notification(exercise_name: str, student_email: str, submiss
 
     try:
         # Create message
-        qcm_info = f"<li>Score QCM : <strong>{qcm_score}/10</strong></li>" if qcm_score is not None else ""
+        qcm_score_text = f"Score QCM : {qcm_score}/10" if qcm_score is not None else "Pas de QCM"
         
         message = Mail(
             from_email=Email(FROM_EMAIL, FROM_NAME),
             to_emails=To(TO_EMAIL),
-            subject=f"MecaFlow - Nouvelle soumission à valider - {exercise_name}",
+            subject=f"MecaFlow - Nouvelle soumission - {exercise_name}",
             html_content=Content(
                 "text/html",
                 f"""
                 <h2>Nouvelle soumission à valider</h2>
-                <p>Une nouvelle soumission requiert votre validation :</p>
-                <ul>
-                    <li>Exercice : <strong>{exercise_name}</strong></li>
-                    <li>Étudiant : <strong>{student_email}</strong></li>
-                    <li>ID de soumission : <strong>{submission_id}</strong></li>
-                    <li>Fichier : <strong>{os.path.basename(file_path)}</strong></li>
-                    {qcm_info}
-                </ul>
-                <p>Le fichier soumis est attaché à cet email.</p>
+                <p>Une soumission d'exercice a été reçue.</p>
                 <br>
-                <p>Pour valider cette soumission, vous pouvez utiliser l'ID de soumission dans l'interface admin.</p>
-                <p>Note : La note finale sera calculée en ajoutant votre note sur 90 au score QCM sur 10.</p>
+                <p><strong>Détails :</strong></p>
+                <p>Exercice : {exercise_name}</p>
+                <p>Étudiant : {student_email}</p>
+                <p>ID de soumission : {submission_id}</p>
+                <p>{qcm_score_text}</p>
                 <br>
-                <p>Cordialement,<br>{FROM_NAME}</p>
+                <p>Le fichier soumis est en pièce jointe.</p>
+                <br>
+                <p>Cordialement,<br>L'équipe MecaFlow</p>
                 """
             )
         )
 
         # Add attachment
-        if os.path.exists(file_path):
-            with open(file_path, 'rb') as f:
-                file_content = f.read()
-                encoded_file = base64.b64encode(file_content).decode()
-            
-            attachment = Attachment()
-            attachment.file_content = FileContent(encoded_file)
-            attachment.file_name = FileName(os.path.basename(file_path))
-            attachment.disposition = Disposition('attachment')
-            attachment.file_type = FileType('application/octet-stream')
-            message.attachment = attachment
+        with open(file_path, 'rb') as f:
+            file_content = f.read()
+            encoded_file = base64.b64encode(file_content).decode()
+        
+        attachment = Attachment()
+        attachment.file_content = FileContent(encoded_file)
+        attachment.file_name = FileName(os.path.basename(file_path))
+        attachment.file_type = FileType('application/octet-stream')
+        attachment.disposition = Disposition('attachment')
+        attachment.content_id = ContentId('submission')
+        message.attachment = attachment
 
         # Send via SendGrid API
         sg = SendGridAPIClient(SENDGRID_API_KEY)
