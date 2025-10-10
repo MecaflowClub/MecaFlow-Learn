@@ -88,35 +88,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger("cad-platform")
 
-# Route de test pour l'envoi d'email
-@app.get("/api/test-email")
-async def test_email():
-    """Route de test pour vérifier la configuration email."""
-    try:
-        from utils.email_utils import send_submission_notification
-        # Créer un fichier test
-        test_file = os.path.join(UPLOAD_DIR, "test_file.txt")
-        with open(test_file, "w") as f:
-            f.write("Ceci est un fichier test")
-            
-        result = send_submission_notification(
-            exercise_name="Test Exercise",
-            student_email="test@test.com",
-            submission_id="test-123",
-            file_path=test_file
-        )
-        
-        return {
-            "success": result,
-            "message": "Email de test envoyé avec succès" if result else "Échec de l'envoi de l'email"
-        }
-    except Exception as e:
-        logger.error(f"Erreur lors du test d'envoi d'email: {str(e)}")
-        return {
-            "success": False,
-            "error": str(e)
-        }
-
 security = HTTPBearer()
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -1050,74 +1021,31 @@ async def submit_exercise(
         (level == "intermediate" and order == 18)
     )
     if special_manual:
-        logger.info(f"Processing manual validation exercise submission for {level} - {order}")
-        
         if ext != ".sldasm":
             raise HTTPException(status_code=400, detail="Seuls les fichiers .SLDASM sont autorisés pour cet exercice.")
-        
-        try:
-            # Save the file
-            file_id = str(uuid.uuid4())
-            path = os.path.join(UPLOAD_DIR, "assemblies", f"{file_id}_{filename}")
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-            with open(path, "wb") as buffer:
-                buffer.write(content)
-
-            # Create submission record
-            sub_dict = {
-                "exercise_id": exercise_id,
-                "user_id": str(current_user.get("_id", current_user.get("id"))),
-                "file_name": filename,
-                "file_path": path,
-                "file_size": size,
-                "status": "pending_manual",
-                "submitted_at": datetime.utcnow(),
-                "cad_comparison": {"manual_validation": True},
-                "user_feedback": user_feedback,
-                "notification_sent": False  # Track if notification was sent
-            }
-
-            if quizAnswers:
-                try:
-                    sub_dict["quiz_answers"] = json.loads(quizAnswers)
-                except Exception:
-                    sub_dict["quiz_answers"] = None
-
-            # Save submission to database
-            result = await submissions_collection.insert_one(sub_dict)
-            sub_dict["_id"] = str(result.inserted_id)
-
-            # Send email notification
-            from utils.email_utils import send_submission_notification
-            exercise_name = f"{level.capitalize()} - Exercice {order}"
-            notification_sent = send_submission_notification(
-                exercise_name=exercise_name,
-                student_email=current_user.get("email", "unknown"),
-                submission_id=sub_dict["_id"],
-                file_path=path
-            )
-
-            # Update notification status
-            if notification_sent:
-                await submissions_collection.update_one(
-                    {"_id": result.inserted_id},
-                    {"$set": {"notification_sent": True}}
-                )
-                logger.info(f"Email notification sent for submission {sub_dict['_id']}")
-            else:
-                logger.warning(f"Failed to send email notification for submission {sub_dict['_id']}")
-                
-        except Exception as e:
-            logger.error(f"Error processing manual submission: {str(e)}")
-            if 'path' in locals() and os.path.exists(path):
-                try:
-                    os.remove(path)
-                except Exception:
-                    pass
-            raise HTTPException(
-                status_code=500,
-                detail="Une erreur est survenue lors du traitement de votre soumission"
-            )
+        file_id = str(uuid.uuid4())
+        path = os.path.join(UPLOAD_DIR, "assemblies", f"{file_id}_{filename}")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "wb") as buffer:
+            buffer.write(content)
+        sub_dict = {
+            "exercise_id": exercise_id,
+            "user_id": str(current_user.get("_id", current_user.get("id"))),
+            "file_name": filename,
+            "file_path": path,
+            "file_size": size,
+            "status": "pending_manual",
+            "submitted_at": datetime.utcnow(),
+            "cad_comparison": {"manual_validation": True},
+            "user_feedback": user_feedback
+        }
+        if quizAnswers:
+            try:
+                sub_dict["quiz_answers"] = json.loads(quizAnswers)
+            except Exception:
+                sub_dict["quiz_answers"] = None
+        result = await submissions_collection.insert_one(sub_dict)
+        sub_dict["_id"] = str(result.inserted_id)
         return {"success": True, "submission": serialize_doc(sub_dict)}
 
     # --- Generic CAD comparison for other exercises ---
