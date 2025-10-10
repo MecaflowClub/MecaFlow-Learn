@@ -63,10 +63,18 @@ def send_verification_code(email: str, code: str):
 
 def send_submission_notification(exercise_name: str, student_email: str, submission_id: str, file_path: str):
     """Send notification for manual validation submission"""
+    print("\n=== Starting Email Notification Process ===")
+    print(f"SENDGRID_API_KEY present: {bool(SENDGRID_API_KEY)}")
+    print(f"FROM_EMAIL: {FROM_EMAIL}")
+    print(f"TO_EMAIL: {TO_EMAIL}")
+    print(f"File path: {file_path}")
+    print(f"File exists: {os.path.exists(file_path)}")
+    
     if not SENDGRID_API_KEY:
         raise ValueError("SendGrid API key not configured")
 
     try:
+        print("\nCreating email message...")
         # Create message
         message = Mail(
             from_email=Email(FROM_EMAIL, FROM_NAME),
@@ -93,38 +101,59 @@ def send_submission_notification(exercise_name: str, student_email: str, submiss
         )
 
         # Add attachment if file exists
+        print("\nProcessing attachment...")
         if os.path.exists(file_path):
-            with open(file_path, 'rb') as f:
-                file_content = f.read()
-                encoded_file = base64.b64encode(file_content).decode()
-            
-            attachment = Attachment()
-            attachment.file_content = FileContent(encoded_file)
-            attachment.file_name = FileName(os.path.basename(file_path))
-            attachment.disposition = Disposition('attachment')
-            attachment.file_type = FileType('application/octet-stream')
-            message.attachment = attachment
-            print(f"File attached: {os.path.basename(file_path)}")
+            print(f"Reading file: {file_path}")
+            try:
+                with open(file_path, 'rb') as f:
+                    file_content = f.read()
+                    file_size = len(file_content)
+                    print(f"File size: {file_size} bytes")
+                    encoded_file = base64.b64encode(file_content).decode()
+                
+                print("Creating attachment object...")
+                attachment = Attachment()
+                attachment.file_content = FileContent(encoded_file)
+                attachment.file_name = FileName(os.path.basename(file_path))
+                attachment.disposition = Disposition('attachment')
+                attachment.file_type = FileType('application/octet-stream')
+                message.attachment = attachment
+                print(f"File attached successfully: {os.path.basename(file_path)}")
+            except Exception as e:
+                print(f"Error processing attachment: {str(e)}")
+                raise
         else:
             print(f"Warning: File not found at {file_path}")
 
         # Send via SendGrid API
+        print("\nInitializing SendGrid client...")
         sg = SendGridAPIClient(SENDGRID_API_KEY)
-        print(f"Attempting to send notification to {TO_EMAIL}...")
-        response = sg.send(message)
+        print(f"Attempting to send notification to {TO_EMAIL}")
         
-        if response.status_code == 403:
-            print("403 Forbidden - Please check: ")
-            print("1. API key has 'Mail Send' permission")
-            print("2. Sender email is verified")
-            print("3. API key is valid and not revoked")
-            raise ValueError("SendGrid authentication failed - check API key permissions")
+        try:
+            print("Sending email...")
+            response = sg.send(message)
+            print(f"Response status code: {response.status_code}")
+            print(f"Response headers: {response.headers}")
+            print(f"Response body: {response.body.decode() if response.body else 'No body'}")
             
-        if response.status_code not in [200, 202]:
-            raise ValueError(f"SendGrid API error: {response.status_code}")
+            if response.status_code == 403:
+                print("\n403 Forbidden - Please check:")
+                print("1. API key has 'Mail Send' permission")
+                print("2. Sender email is verified")
+                print("3. API key is valid and not revoked")
+                raise ValueError("SendGrid authentication failed - check API key permissions")
+                
+            if response.status_code not in [200, 202]:
+                print(f"\nUnexpected status code: {response.status_code}")
+                raise ValueError(f"SendGrid API error: {response.status_code}")
+                
+            print("\nNotification email sent successfully!")
+            return True
             
-        print(f"Notification email sent successfully. Status code: {response.status_code}")
-        return True
+        except Exception as e:
+            print(f"\nError during send operation: {str(e)}")
+            raise
 
     except Exception as e:
         error_msg = str(e)

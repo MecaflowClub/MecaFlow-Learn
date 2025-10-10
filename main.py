@@ -92,6 +92,38 @@ security = HTTPBearer()
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
+@app.get("/api/test-email")
+async def test_email():
+    """Test email sending functionality"""
+    try:
+        # Create a test file
+        test_file = os.path.join(UPLOAD_DIR, "test_file.txt")
+        with open(test_file, "w") as f:
+            f.write("This is a test file")
+        
+        from utils.email_utils import send_submission_notification
+        result = send_submission_notification(
+            exercise_name="Test Exercise",
+            student_email="test@example.com",
+            submission_id="test-123",
+            file_path=test_file
+        )
+        
+        # Clean up test file
+        os.remove(test_file)
+        
+        return {
+            "success": True,
+            "message": "Test email sent successfully",
+            "result": result
+        }
+    except Exception as e:
+        logger.error(f"Email test failed: {str(e)}")
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
 # =============================================================================
 # LOGGING SETUP
 # =============================================================================
