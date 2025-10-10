@@ -137,6 +137,11 @@ def send_submission_notification(exercise_name: str, student_email: str, submiss
     """Send notification for manual validation submission"""
     logger.info(f"Sending submission notification for {submission_id}")
     
+    # Ensure we're using the configured TO_EMAIL
+    if not TO_EMAIL:
+        logger.error("TO_EMAIL not configured for submission notifications")
+        return False
+        
     html_content = f"""
     <h2>Nouvelle soumission à valider</h2>
     <p>Une nouvelle soumission requiert votre validation :</p>
@@ -153,8 +158,9 @@ def send_submission_notification(exercise_name: str, student_email: str, submiss
     <p>Cordialement,<br>{FROM_NAME}</p>
     """
     
+    # Use the configured TO_EMAIL instead of a parameter
     success, error = get_email_service().send_email(
-        to_email=TO_EMAIL,
+        to_email=TO_EMAIL,  # This ensures we use the configured email
         subject=f"MecaFlow - Nouvelle soumission à valider - {exercise_name}",
         html_content=html_content,
         attachment_path=file_path
@@ -162,5 +168,7 @@ def send_submission_notification(exercise_name: str, student_email: str, submiss
     
     if not success:
         logger.error(f"Failed to send submission notification: {error.message if error else 'Unknown error'}")
-        
+        if error:
+            logger.error(f"Error details: {error.details}")
+            
     return success
