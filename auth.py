@@ -6,6 +6,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 import os
+import logging
 from dotenv import load_dotenv
 from database import users_collection  # MongoDB collection
 
@@ -15,10 +16,10 @@ load_dotenv()
 # Configuration JWT
 SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "180"))
-REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "1440"))  # 24 hours
+REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "30"))  # 30 days
 
-print("ACCESS_TOKEN_EXPIRE_MINUTES =", ACCESS_TOKEN_EXPIRE_MINUTES)
+logger = logging.getLogger("auth")
 
 # Context pour le hachage des mots de passe
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -90,14 +91,49 @@ async def authenticate_user(email: str, password: str) -> Optional[dict]:
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ) -> dict:
-    token = credentials.credentials
-    email = verify_token(token)
-    if not email:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
-    user = await users_collection.find_one({"email": email})
-    if not user:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
-    if not user.get("is_active", True):
+    try:
+        token = credentials.credentials
+        email = verify_token(token)
+        if not email:
+            logger.warning("Invalid token detected")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Session expirée ou token invalide",
+                headers={"WWW-Authenticate": "Bearer"}
+            )
+        
+        user = await users_collection.find_one({"email": email})
+        if not user:
+            logger.warning(f"User not found for email: {email}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Utilisateur non trouvé",
+                headers={"WWW-Authenticate": "Bearer"}
+            )
+            
+        if not user.get("is_active", True):
+            logger.warning(f"Inactive user attempt to access: {email}")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Compte utilisateur inactif",
+                headers={"WWW-Authenticate": "Bearer"}
+            )
+        
+        return user
+    except JWTError as e:
+        logger.error(f"JWT error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session expirée. Veuillez vous reconnecter.",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
+    except Exception as e:
+        logger.error(f"Authentication error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Erreur d'authentification",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User is inactive")
     return user
 

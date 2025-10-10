@@ -332,20 +332,3 @@ def compare_models(submitted_path: str, reference_path: str, tol: float = 1e-3) 
         feedback["global_score"] = global_score
         feedback["success"] = global_score >= 80
         return feedback
-
-def compare_shell_models(submitted_path: str, reference_path: str, tol: float = 1e-3) -> Dict[str, Any]:
-    """
-    Compare two STEP models that are shells or surfaces.
-    """
-    try:
-        # Read the files
-        sub_shape = read_step_file(submitted_path)
-        ref_shape = read_step_file(reference_path)
-
-        # Compare as normal parts, but with shell-specific tolerances
-        return compare_models(submitted_path, reference_path, tol * 2.0)
-    except Exception as e:
-        return {
-            "success": False,
-            "error": f"Erreur lors de la comparaison des surfaces: {str(e)}"
-        }
